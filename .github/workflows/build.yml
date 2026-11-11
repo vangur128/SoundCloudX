@@ -17,7 +17,6 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: 'gradle' # ЭТА СТРОКА УСКОРЯЕТ СБОРКУ В РАЗЫ!
 
     - name: Set up Android SDK
       run: |
@@ -35,10 +34,15 @@ jobs:
         yes | cmdline-tools/latest/bin/sdkmanager --licenses
         cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
+    - name: Force Gradle 8.5 Wrapper
+      run: |
+        # Удаляем старый битый враппер, если он вдруг есть
+        rm -rf gradle/wrapper
+        # Генерируем враппер СТРОГО версии 8.5, независимо от системного gradle
+        gradle wrapper --gradle-version 8.5
+
     - name: Build APK
-      run: gradle assembleDebug --no-daemon --no-configuration-cache
-      env:
-        GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
