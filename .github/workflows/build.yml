@@ -17,6 +17,7 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: 'gradle' # ЭТА СТРОКА УСКОРЯЕТ СБОРКУ В РАЗЫ!
 
     - name: Set up Android SDK
       run: |
@@ -24,7 +25,6 @@ jobs:
         cd $ANDROID_HOME
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
         unzip -q commandlinetools-linux-11076708_latest.zip
-        
         rm -rf cmdline-tools/latest
         mkdir -p cmdline-tools/latest
         cp -r cmdline-tools/bin cmdline-tools/latest/
@@ -32,15 +32,13 @@ jobs:
         cp cmdline-tools/NOTICE.txt cmdline-tools/latest/
         cp cmdline-tools/source.properties cmdline-tools/latest/
         rm -rf cmdline-tools/bin cmdline-tools/lib cmdline-tools/NOTICE.txt cmdline-tools/source.properties
-        
         yes | cmdline-tools/latest/bin/sdkmanager --licenses
         cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
-    - name: Generate correct Gradle Wrapper (v8.5)
-      run: gradle wrapper --gradle-version 8.5
-
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug --no-daemon
+    - name: Build APK
+      run: gradle assembleDebug --no-daemon --no-configuration-cache
+      env:
+        GRADLE_OPTS: "-Xmx2048m -Dorg.gradle.daemon=false"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
