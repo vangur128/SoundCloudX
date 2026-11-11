@@ -30,13 +30,11 @@ jobs:
         # Распаковываем
         unzip -q commandlinetools-linux-11076708_latest.zip
         
-        # Перемещаем в правильную структуру
-        rm -rf cmdline-tools/latest
+        # Переименовываем папку в правильную структуру
+        mv cmdline-tools cmdline-tools-temp
         mkdir -p cmdline-tools/latest
-        mv cmdline-tools/bin/* cmdline-tools/latest/bin/
-        mv cmdline-tools/lib/* cmdline-tools/latest/lib/
-        mv cmdline-tools/NOTICE.txt cmdline-tools/latest/
-        mv cmdline-tools/source.properties cmdline-tools/latest/
+        mv cmdline-tools-temp/* cmdline-tools/latest/
+        rmdir cmdline-tools-temp
         
         # Принимаем лицензии
         yes | cmdline-tools/latest/bin/sdkmanager --licenses
