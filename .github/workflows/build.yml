@@ -20,39 +20,26 @@ jobs:
 
     - name: Set up Android SDK
       run: |
-        # Создаём директорию для SDK
         mkdir -p $ANDROID_HOME
         cd $ANDROID_HOME
-        
-        # Скачиваем командные инструменты
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        
-        # Распаковываем
         unzip -q commandlinetools-linux-11076708_latest.zip
-        
-        # Переименовываем папку в правильную структуру
-        mv cmdline-tools cmdline-tools-temp
+        rm -rf cmdline-tools/latest
         mkdir -p cmdline-tools/latest
-        mv cmdline-tools-temp/* cmdline-tools/latest/
-        rmdir cmdline-tools-temp
-        
-        # Принимаем лицензии
+        mv cmdline-tools/bin/* cmdline-tools/latest/bin/
+        mv cmdline-tools/lib/* cmdline-tools/latest/lib/
+        mv cmdline-tools/NOTICE.txt cmdline-tools/latest/
+        mv cmdline-tools/source.properties cmdline-tools/latest/
         yes | cmdline-tools/latest/bin/sdkmanager --licenses
-        
-        # Устанавливаем компоненты
         cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew || echo "gradlew not found"
+    - name: Remove broken gradlew
+      run: |
+        rm -f gradlew
+        rm -rf gradle/wrapper
 
     - name: Build with Gradle
-      run: |
-        if [ -f gradlew ]; then
-          ./gradlew assembleDebug
-        else
-          gradle wrapper
-          ./gradlew assembleDebug
-        fi
+      run: gradle assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
