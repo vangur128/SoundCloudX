@@ -34,7 +34,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
     val context = LocalContext.current
 
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
-        // Верхняя часть с поиском и списком (занимает всё свободное место)
         Column(Modifier.weight(1f).padding(16.dp)) {
             OutlinedTextField(
                 value = query,
@@ -79,17 +78,13 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
             
             Spacer(Modifier.height(16.dp))
             
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 items(results) { track ->
                     TrackRow(track, playerViewModel, context)
                 }
             }
         }
 
-        // Нижняя панель "Сейчас играет" (всегда внизу)
         playerViewModel.currentTrack?.let { track ->
             NowPlayingBar(track, playerViewModel)
         }
