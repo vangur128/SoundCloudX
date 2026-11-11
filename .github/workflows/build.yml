@@ -25,7 +25,6 @@ jobs:
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
         unzip -q commandlinetools-linux-11076708_latest.zip
         
-        # Правильно перемещаем файлы
         rm -rf cmdline-tools/latest
         mkdir -p cmdline-tools/latest
         cp -r cmdline-tools/bin cmdline-tools/latest/
@@ -34,21 +33,17 @@ jobs:
         cp cmdline-tools/source.properties cmdline-tools/latest/
         rm -rf cmdline-tools/bin cmdline-tools/lib cmdline-tools/NOTICE.txt cmdline-tools/source.properties
         
-        # Принимаем лицензии и устанавливаем компоненты
         yes | cmdline-tools/latest/bin/sdkmanager --licenses
         cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
-    - name: Remove broken gradlew
-      run: |
-        rm -f gradlew
-        rm -rf gradle/wrapper
+    - name: Generate correct Gradle Wrapper (v8.5)
+      run: gradle wrapper --gradle-version 8.5
 
     - name: Build with Gradle
-      run: gradle assembleDebug --no-daemon
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: SoundCloudX-Debug-APK
         path: app/build/outputs/apk/debug/app-debug.apk
-        
