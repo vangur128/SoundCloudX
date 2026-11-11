@@ -22,14 +22,19 @@ jobs:
       run: |
         # Создаём директорию для SDK
         mkdir -p $ANDROID_HOME
+        cd $ANDROID_HOME
         
         # Скачиваем командные инструменты
-        cd $ANDROID_HOME
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        
+        # Распаковываем
         unzip -q commandlinetools-linux-11076708_latest.zip
+        
+        # Перемещаем в правильную структуру
+        rm -rf cmdline-tools/latest
         mkdir -p cmdline-tools/latest
-        mv cmdline-tools/bin cmdline-tools/latest/
-        mv cmdline-tools/lib cmdline-tools/latest/
+        mv cmdline-tools/bin/* cmdline-tools/latest/bin/
+        mv cmdline-tools/lib/* cmdline-tools/latest/lib/
         mv cmdline-tools/NOTICE.txt cmdline-tools/latest/
         mv cmdline-tools/source.properties cmdline-tools/latest/
         
