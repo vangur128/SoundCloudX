@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.*
+import com.example.soundcloudx.ui.PlayerScreen
 import com.example.soundcloudx.ui.SearchScreen
 
 class MainActivity : ComponentActivity() {
@@ -17,7 +19,21 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                SearchScreen(playerViewModel = playerViewModel, context = this)
+                var showPlayer by remember { mutableStateOf(false) }
+
+                if (showPlayer && playerViewModel.currentTrack != null) {
+                    PlayerScreen(
+                        playerViewModel = playerViewModel,
+                        context = this,
+                        onBackClick = { showPlayer = false }
+                    )
+                } else {
+                    SearchScreen(
+                        playerViewModel = playerViewModel,
+                        context = this,
+                        onTrackClick = { showPlayer = true } 
+                    )
+                }
             }
         }
     }
