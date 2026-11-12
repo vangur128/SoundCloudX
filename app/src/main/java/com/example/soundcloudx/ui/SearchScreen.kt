@@ -72,7 +72,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
     }
 
     Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0A0A0A), Color(0xFF1A1A1A))))) {
-        Text("SoundCloudX", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1DB954), modifier = Modifier.padding(24.dp, 24.dp, 24.dp, 8.dp))
+        Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1DB954), modifier = Modifier.padding(24.dp, 24.dp, 24.dp, 8.dp))
         OutlinedTextField(value = query, onValueChange = { query = it }, placeholder = { Text("Поиск...", color = Color.Gray) }, singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF1DB954)) }, colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF1DB954), unfocusedBorderColor = Color(0xFF333333)), modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).clip(RoundedCornerShape(16.dp)), shape = RoundedCornerShape(16.dp))
         Spacer(Modifier.height(16.dp))
         Button(onClick = {
