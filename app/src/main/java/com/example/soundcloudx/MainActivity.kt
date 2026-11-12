@@ -1,9 +1,14 @@
 package com.example.soundcloudx
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,10 +31,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
@@ -43,6 +50,7 @@ import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// --- VIEW MODEL ---
 class PlayerViewModel : ViewModel() {
     var exoPlayer: ExoPlayer? = null
     var currentTrack by mutableStateOf<SCTrack?>(null)
@@ -108,6 +116,7 @@ class PlayerViewModel : ViewModel() {
     override fun onCleared() { super.onCleared(); exoPlayer?.release(); exoPlayer = null }
 }
 
+// --- MAIN ACTIVITY ---
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
@@ -117,6 +126,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 var showPlayer by remember { mutableStateOf(false) }
+                
+                // Запрос разрешений для локальной музыки
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { }
+
+                LaunchedEffect(Unit) {
+                    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Manifest.permission.READ_MEDIA_AUDIO
+                    } else {
+                        Manifest.permission.READ_EXTERNAL_STORAGE
+                    }
+                    if (ContextCompat.checkSelfPermission(this@MainActivity, permission) != PackageManager.PERMISSION_GRANTED) {
+                        permissionLauncher.launch(permission)
+                    }
+                }
+
                 if (showPlayer && playerViewModel.currentTrack != null) {
                     PlayerScreenView(playerViewModel = playerViewModel, context = this, onBackClick = { showPlayer = false })
                 } else {
@@ -127,6 +153,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// --- SEARCH SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClick: () -> Unit) {
@@ -138,15 +165,20 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     var selectedTab by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { try { localTracks = LocalMusicApi.getLocalTracks(context) } catch (_: Exception) {} }
+    // Загружаем локальные треки при старте
+    LaunchedEffect(Unit) { 
+        try { localTracks = LocalMusicApi.getLocalTracks(context) } catch (_: Exception) {} 
+    }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
         Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8), modifier = Modifier.padding(bottom = 16.dp))
+        
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF2A1F35), contentColor = Color(0xFFC9A8E8)) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("SoundCloud", fontSize = 14.sp) })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Моя музыка (${localTracks.size})", fontSize = 14.sp) })
         }
         Spacer(Modifier.height(16.dp))
+
         if (selectedTab == 0) {
             OutlinedTextField(value = query, onValueChange = { query = it }, placeholder = { Text("Введите запрос...", color = Color.Gray) }, singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF9B7CB6)) },
@@ -171,6 +203,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
             }
         }
         Spacer(Modifier.height(16.dp))
+
         errorMessage?.let { error ->
             Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF331133))) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -181,8 +214,10 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
             }
             Spacer(Modifier.height(16.dp))
         }
+
         val displayTracks = if (selectedTab == 0) results else localTracks
-        if (displayTracks.isEmpty() && selectedTab == 1) Text("Локальная музыка не найдена", color = Color.Gray, modifier = Modifier.padding(16.dp))
+        if (displayTracks.isEmpty() && selectedTab == 1) Text("Локальная музыка не найдена или нет прав доступа", color = Color.Gray, modifier = Modifier.padding(16.dp))
+
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(displayTracks) { track ->
                 Row(modifier = Modifier.fillMaxWidth().clickable { playerViewModel.playTrack(track, context, displayTracks); onTrackClick() }
@@ -216,6 +251,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     }
 }
 
+// --- PLAYER SCREEN ---
 @Composable
 fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackClick: () -> Unit) {
     val track = playerViewModel.currentTrack ?: return
