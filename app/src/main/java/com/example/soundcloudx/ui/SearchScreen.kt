@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +44,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var showPlayer by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -80,9 +83,20 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
             onClick = {
                 if (query.isBlank()) return@Button
                 isLoading = true
+                errorMessage = null
                 scope.launch {
-                    results = try { SoundCloudApi.search(query, limit = 50) } catch (e: Exception) { emptyList() }
-                    isLoading = false
+                    try {
+                        val found = SoundCloudApi.search(query, limit = 50)
+                        if (found.isEmpty()) {
+                            errorMessage = "Ничего не найдено. Попробуй другой запрос."
+                        }
+                        results = found
+                    } catch (e: Exception) {
+                        errorMessage = "Ошибка: ${e.message ?: "Неизвестная ошибка"}"
+                        results = emptyList()
+                    } finally {
+                        isLoading = false
+                    }
                 }
             },
             enabled = !isLoading && query.isNotBlank(),
@@ -90,10 +104,43 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(52.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text(if (isLoading) "Поиск..." else "Найти треки", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 3.dp)
+            } else {
+                Text("Найти треки", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
+
+        // Показываем ошибку, если есть
+        errorMessage?.let { error ->
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF331111))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Default.Error, contentDescription = null, tint = Color(0xFFFF6B6B))
+                    Text(error, color = Color(0xFFFF6B6B), fontSize = 14.sp, modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // Показываем результаты или подсказку
+        if (results.isEmpty() && errorMessage == null && !isLoading) {
+            Text(
+                "Введи запрос и нажми 'Найти треки'",
+                color = Color.Gray,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+            )
+        }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
             items(results) { track ->
@@ -207,6 +254,33 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatDuration(playerViewModel.currentPosition), color = Color.Gray, fontSize = 12.sp)
             Text(formatDuration(playerViewModel.duration), color = Color.Gray, fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { }, modifier = Modifier.size(64.dp)) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Prev", tint = Color.Gray, modifier = Modifier.size(48.dp))
+            }
+            IconButton(
+                onClick = { playerViewModel.togglePlayPause() },
+                modifier = Modifier.size(80.dp).clip(CircleShape).background(Color(0xFF1DB954))
+            ) {
+                Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.Black, modifier = Modifier.size(56.dp))
+            }
+            IconButton(onClick = { }, modifier = Modifier.size(64.dp)) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = Color.Gray, modifier = Modifier.size(48.dp))
+            }
+        }
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val secs = seconds % 60
+    return String.format("%d:%02d", minutes, secs)
+}matDuration(playerViewModel.duration), color = Color.Gray, fontSize = 12.sp)
         }
 
         Spacer(Modifier.height(32.dp))
