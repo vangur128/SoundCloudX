@@ -9,7 +9,9 @@
         android:allowBackup="true"
         android:label="SoundCloudX"
         android:theme="@android:style/Theme.Material.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:icon="@drawable/ic_music_note"
+        android:roundIcon="@drawable/ic_music_note">
 
         <activity
             android:name=".MainActivity"
