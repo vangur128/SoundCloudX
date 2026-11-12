@@ -1,5 +1,7 @@
 package com.example.soundcloudx.sc
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,14 +23,26 @@ object SoundCloudApi {
     
     private val json = Json { ignoreUnknownKeys = true }
     
-    // Рабочий client_id (обновлён)
-    private const val CLIENT_ID = "a3e059563d7fd3372b49b37f00a00bcf"
+    private const val PREFS_NAME = "MeloPrefs"
+    private const val KEY_CLIENT_ID = "soundcloud_client_id"
+    
+    fun getSavedClientId(context: Context): String {
+        val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_CLIENT_ID, "") ?: ""
+    }
+    
+    fun saveClientId(context: Context, clientId: String) {
+        val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_CLIENT_ID, clientId).apply()
+        Log.d("MeloSC", "Ключ сохранён: ${clientId.take(10)}...")
+    }
 
-    suspend fun search(query: String, limit: Int = 50): List<SCTrack> = withContext(Dispatchers.IO) {
-        val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=$limit&client_id=$CLIENT_ID"
+    suspend fun search(query: String, limit: Int = 50, context: Context? = null): List<SCTrack> = withContext(Dispatchers.IO) {
+        val clientId = context?.let { getSavedClientId(it) } ?: ""
+        if (clientId.isBlank()) throw Exception("Введи client_id в настройках")
         
-        Log.d("MeloSC", "Поиск: $query")
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=$limit&client_id=$clientId"
         
         val request = Request.Builder()
             .url(url)
@@ -40,7 +54,7 @@ object SoundCloudApi {
         val responseBody = response.body?.string() ?: throw Exception("Пустой ответ")
         
         if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code}: ${responseBody.take(100)}")
+            throw Exception("HTTP ${response.code}: ключ не работает, обнови в настройках")
         }
         
         val root = json.parseToJsonElement(responseBody).jsonObject
@@ -49,7 +63,6 @@ object SoundCloudApi {
         collection.map { element ->
             val track = element.jsonObject
             val user = track["user"]?.jsonObject
-            
             val media = track["media"]?.jsonObject
             val transcodings = media?.get("transcodings")?.jsonArray
             val streamUrl = transcodings?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
@@ -71,10 +84,13 @@ object SoundCloudApi {
         }
     }
     
-    suspend fun getStreamUrl(track: SCTrack): String = withContext(Dispatchers.IO) {
+    suspend fun getStreamUrl(track: SCTrack, context: Context? = null): String = withContext(Dispatchers.IO) {
         if (track.streamUrl.isBlank()) throw Exception("Стрим недоступен")
         
-        val url = "${track.streamUrl}?client_id=$CLIENT_ID"
+        val clientId = context?.let { getSavedClientId(it) } ?: ""
+        if (clientId.isBlank()) throw Exception("Введи client_id в настройках")
+        
+        val url = "${track.streamUrl}?client_id=$clientId"
         
         val response = client.newCall(Request.Builder()
             .url(url)
