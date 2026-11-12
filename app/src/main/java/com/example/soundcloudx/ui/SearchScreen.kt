@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -24,63 +25,93 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.soundcloudx.PlayerViewModel
+import com.example.soundcloudx.sc.LocalMusicApi
 import com.example.soundcloudx.sc.SoundCloudApi
 import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
+fun SearchScreen(
+    playerViewModel: PlayerViewModel,
+    context: Context,
+    onTrackClick: () -> Unit
+) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
+    var localTracks by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var selectedTab by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        try {
+            localTracks = LocalMusicApi.getLocalTracks(context)
+        } catch (e: Exception) {
+            // Игнорируем ошибки локальных файлов
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
         Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8), modifier = Modifier.padding(bottom = 16.dp))
         
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Введите запрос...", color = Color.Gray) },
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF9B7CB6)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF9B7CB6),
-                unfocusedBorderColor = Color(0xFF3D2E4A)
-            ),
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-        )
-        
-        Spacer(Modifier.height(12.dp))
-        
-        Button(
-            onClick = {
-                if (query.isBlank()) return@Button
-                isLoading = true
-                errorMessage = null
-                scope.launch {
-                    try {
-                        val found = SoundCloudApi.search(query, limit = 30)
-                        if (found.isEmpty()) {
-                            errorMessage = "Ничего не найдено. Попробуй другой запрос."
+        TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF2A1F35), contentColor = Color(0xFFC9A8E8)) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text("SoundCloud", fontSize = 14.sp) }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text("Моя музыка (${localTracks.size})", fontSize = 14.sp) }
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (selectedTab == 0) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Введите запрос...", color = Color.Gray) },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF9B7CB6)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF9B7CB6),
+                    unfocusedBorderColor = Color(0xFF3D2E4A)
+                ),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            )
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Button(
+                onClick = {
+                    if (query.isBlank()) return@Button
+                    isLoading = true
+                    errorMessage = null
+                    scope.launch {
+                        try {
+                            val found = SoundCloudApi.search(query, limit = 30)
+                            if (found.isEmpty()) errorMessage = "Ничего не найдено."
+                            results = found
+                        } catch (e: Throwable) {
+                            errorMessage = "Ошибка: ${e.toString()}"
+                            results = emptyList()
+                        } finally {
+                            isLoading = false
                         }
-                        results = found
-                    } catch (e: Throwable) {
-                        errorMessage = "Ошибка: ${e.toString()}"
-                        results = emptyList()
-                    } finally {
-                        isLoading = false
                     }
-                }
-            },
-            enabled = !isLoading && query.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9B7CB6), contentColor = Color.White),
-            modifier = Modifier.fillMaxWidth().height(48.dp)
-        ) {
-            if (isLoading) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
-            else Text("Найти", fontWeight = FontWeight.Bold)
+                },
+                enabled = !isLoading && query.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9B7CB6), contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) {
+                if (isLoading) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
+                else Text("Найти", fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -96,14 +127,30 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
             Spacer(Modifier.height(16.dp))
         }
 
+        val displayTracks = if (selectedTab == 0) results else localTracks
+
+        if (displayTracks.isEmpty() && selectedTab == 1) {
+            Text("Локальная музыка не найдена", color = Color.Gray, modifier = Modifier.padding(16.dp))
+        }
+
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(results) { track ->
+            items(displayTracks) { track ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().clickable { playerViewModel.playTrack(track, context) }
-                        .background(Color(0xFF2A1F35), RoundedCornerShape(8.dp)).padding(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            playerViewModel.playTrack(track, context, displayTracks)
+                            onTrackClick()
+                        }
+                        .background(Color(0xFF2A1F35), RoundedCornerShape(8.dp))
+                        .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+                    if (track.artworkUrl.isNotBlank()) {
+                        AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+                    } else {
+                        Icon(Icons.Default.MusicNote, null, tint = Color(0xFF9B7CB6), modifier = Modifier.size(48.dp).background(Color(0xFF3D2E4A), RoundedCornerShape(4.dp)).padding(8.dp))
+                    }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(track.title, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -118,10 +165,18 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
 
     playerViewModel.currentTrack?.let { track ->
         Row(
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF2A1F35)).padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF2A1F35))
+                .clickable { onTrackClick() }
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+            if (track.artworkUrl.isNotBlank()) {
+                AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+            } else {
+                Icon(Icons.Default.MusicNote, null, tint = Color(0xFF9B7CB6), modifier = Modifier.size(40.dp).background(Color(0xFF3D2E4A), RoundedCornerShape(4.dp)).padding(6.dp))
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Играет:", color = Color(0xFFC9A8E8), fontSize = 10.sp)
