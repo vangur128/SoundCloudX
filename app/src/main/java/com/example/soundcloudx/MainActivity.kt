@@ -30,6 +30,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.example.soundcloudx.sc.LocalMusicApi
 import com.example.soundcloudx.sc.SoundCloudApi
@@ -37,35 +42,97 @@ import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// --- VIEW MODEL (Всё в одном файле!) ---
+class PlayerViewModel : ViewModel() {
+    var exoPlayer: ExoPlayer? = null
+    var currentTrack by mutableStateOf<SCTrack?>(null)
+    var isPlaying by mutableStateOf(false)
+    var currentPosition by mutableStateOf(0L)
+    var duration by mutableStateOf(0L)
+    var queue by mutableStateOf<List<SCTrack>>(emptyList())
+    var queueIndex by mutableStateOf(0)
+    var isShuffle by mutableStateOf(false)
+    var isRepeat by mutableStateOf(false)
+
+    fun initPlayer(context: Context) {
+        if (exoPlayer == null) {
+            exoPlayer = ExoPlayer.Builder(context)
+                .setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
+                .build()
+            exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == androidx.media3.common.Player.STATE_ENDED) {
+                        if (isRepeat) { exoPlayer?.seekTo(0); exoPlayer?.play() } else { nextTrack(context) }
+                    }
+                }
+            })
+        }
+    }
+
+    fun playTrack(track: SCTrack, context: Context, trackList: List<SCTrack> = emptyList()) {
+        viewModelScope.launch {
+            try {
+                currentTrack = track
+                if (trackList.isNotEmpty()) { queue = trackList; queueIndex = trackList.indexOf(track).coerceAtLeast(0) }
+                initPlayer(context)
+                val streamUrl = SoundCloudApi.getStreamUrl(track)
+                exoPlayer?.setMediaItem(MediaItem.fromUri(streamUrl))
+                exoPlayer?.prepare()
+                exoPlayer?.play()
+                isPlaying = true
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun togglePlayPause() { if (isPlaying) { exoPlayer?.pause(); isPlaying = false } else { exoPlayer?.play(); isPlaying = true } }
+    fun seekTo(position: Long) { exoPlayer?.seekTo(position); currentPosition = position }
+    
+    fun nextTrack(context: Context) {
+        if (queue.isEmpty()) return
+        queueIndex = if (isShuffle) (0 until queue.size).random() else (queueIndex + 1) % queue.size
+        playTrack(queue[queueIndex], context, queue)
+    }
+
+    fun previousTrack(context: Context) {
+        if (queue.isEmpty()) return
+        if (currentPosition > 3000) { seekTo(0); return }
+        queueIndex = if (queueIndex - 1 < 0) queue.size - 1 else queueIndex - 1
+        playTrack(queue[queueIndex], context, queue)
+    }
+
+    fun updatePosition() {
+        currentPosition = exoPlayer?.currentPosition ?: 0L
+        duration = exoPlayer?.duration?.takeIf { it > 0 } ?: 0L
+    }
+
+    fun toggleShuffle() { isShuffle = !isShuffle }
+    fun toggleRepeat() { isRepeat = !isRepeat }
+
+    override fun onCleared() { super.onCleared(); exoPlayer?.release(); exoPlayer = null }
+}
+
+// --- MAIN ACTIVITY ---
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         playerViewModel.initPlayer(this)
-
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 var showPlayer by remember { mutableStateOf(false) }
-
                 if (showPlayer && playerViewModel.currentTrack != null) {
-                    PlayerScreenView(
-                        playerViewModel = playerViewModel,
-                        context = this,
-                        onBackClick = { showPlayer = false }
-                    )
+                    PlayerScreenView(playerViewModel = playerViewModel, context = this, onBackClick = { showPlayer = false })
                 } else {
-                    SearchScreen(
-                        playerViewModel = playerViewModel,
-                        context = this,
-                        onTrackClick = { showPlayer = true }
-                    )
+                    SearchScreen(playerViewModel = playerViewModel, context = this, onTrackClick = { showPlayer = true })
                 }
             }
         }
     }
 }
 
+// --- SEARCH SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClick: () -> Unit) {
@@ -77,9 +144,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     var selectedTab by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        try { localTracks = LocalMusicApi.getLocalTracks(context) } catch (_: Exception) {}
-    }
+    LaunchedEffect(Unit) { try { localTracks = LocalMusicApi.getLocalTracks(context) } catch (_: Exception) {} }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
         Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8), modifier = Modifier.padding(bottom = 16.dp))
@@ -163,6 +228,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     }
 }
 
+// --- PLAYER SCREEN ---
 @Composable
 fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackClick: () -> Unit) {
     val track = playerViewModel.currentTrack ?: return
@@ -177,6 +243,54 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
             IconButton(onClick = { }) { Icon(Icons.Default.Share, "Share", tint = Color(0xFFC9A8E8)) }
         }
         Spacer(Modifier.height(32.dp))
+        AsyncImage(model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(40.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(track.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(track.user.username, color = Color(0xFF9B7CB6), fontSize = 16.sp, maxLines = 1)
+            }
+            IconButton(onClick = { }) { Icon(Icons.Default.FavoriteBorder, "Like", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp)) }
+        }
+        Spacer(Modifier.height(32.dp))
+        Slider(value = playerViewModel.currentPosition.toFloat(), onValueChange = { playerViewModel.seekTo(it.toLong()) },
+            valueRange = 0f..playerViewModel.duration.toFloat().coerceAtLeast(1f),
+            colors = SliderDefaults.colors(thumbColor = Color(0xFFC9A8E8), activeTrackColor = Color(0xFFC9A8E8), inactiveTrackColor = Color(0xFF3D2E4A)),
+            modifier = Modifier.fillMaxWidth())
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatDuration(playerViewModel.currentPosition), color = Color(0xFF9B7CB6), fontSize = 12.sp)
+            Text(formatDuration(playerViewModel.duration), color = Color(0xFF9B7CB6), fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(24.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { playerViewModel.toggleShuffle() }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (playerViewModel.isShuffle) Color(0xFFC9A8E8) else Color(0xFF6B5B7B), modifier = Modifier.size(28.dp))
+            }
+            IconButton(onClick = { playerViewModel.previousTrack(context) }, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(40.dp))
+            }
+            IconButton(onClick = { playerViewModel.togglePlayPause() }, modifier = Modifier.size(72.dp).clip(CircleShape).background(Color(0xFF9B7CB6))) {
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", tint = Color.White, modifier = Modifier.size(48.dp))
+            }
+            IconButton(onClick = { playerViewModel.nextTrack(context) }, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(40.dp))
+            }
+            IconButton(onClick = { playerViewModel.toggleRepeat() }, modifier = Modifier.size(48.dp)) {
+                Icon(if (playerViewModel.isRepeat) Icons.Default.RepeatOne else Icons.Default.Repeat, "Repeat", tint = if (playerViewModel.isRepeat) Color(0xFFC9A8E8) else Color(0xFF6B5B7B), modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    if (ms <= 0) return "0:00"
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val secs = seconds % 60
+    return String.format("%d:%02d", minutes, secs)
+}32.dp))
         AsyncImage(model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(40.dp))
