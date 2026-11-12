@@ -113,7 +113,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
 
         Spacer(Modifier.height(16.dp))
 
-        // Показываем ошибку, если есть
         errorMessage?.let { error ->
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
@@ -131,7 +130,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
             Spacer(Modifier.height(16.dp))
         }
 
-        // Показываем результаты или подсказку
         if (results.isEmpty() && errorMessage == null && !isLoading) {
             Text(
                 "Введи запрос и нажми 'Найти треки'",
@@ -215,6 +213,72 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
         targetValue = if (isPlaying) 360f else 0f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
             animation = androidx.compose.animation.core.tween(durationMillis = 15000, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        )
+    )
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(colors = listOf(Color(0xFF1A1A1A), Color(0xFF0A0A0A)))).padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBackClick) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("Сейчас играет", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        }
+        
+        Spacer(Modifier.height(24.dp))
+        
+        AsyncImage(
+            model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.size(280.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color.DarkGray)
+        )
+
+        Spacer(Modifier.height(32.dp))
+        Text(track.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2)
+        Spacer(Modifier.height(8.dp))
+        Text(track.user.username, fontSize = 16.sp, color = Color.Gray)
+        Spacer(Modifier.height(32.dp))
+
+        Slider(
+            value = playerViewModel.currentPosition.toFloat(),
+            onValueChange = { playerViewModel.seekTo(it.toLong()) },
+            valueRange = 0f..playerViewModel.duration.toFloat().coerceAtLeast(1f),
+            colors = SliderDefaults.colors(thumbColor = Color(0xFF1DB954), activeTrackColor = Color(0xFF1DB954), inactiveTrackColor = Color(0xFF333333)),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatDuration(playerViewModel.currentPosition), color = Color.Gray, fontSize = 12.sp)
+            Text(formatDuration(playerViewModel.duration), color = Color.Gray, fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { }, modifier = Modifier.size(64.dp)) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Prev", tint = Color.Gray, modifier = Modifier.size(48.dp))
+            }
+            IconButton(
+                onClick = { playerViewModel.togglePlayPause() },
+                modifier = Modifier.size(80.dp).clip(CircleShape).background(Color(0xFF1DB954))
+            ) {
+                Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.Black, modifier = Modifier.size(56.dp))
+            }
+            IconButton(onClick = { }, modifier = Modifier.size(64.dp)) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = Color.Gray, modifier = Modifier.size(48.dp))
+            }
+        }
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val secs = seconds % 60
+    return String.format("%d:%02d", minutes, secs)
+}),
             repeatMode = androidx.compose.animation.core.RepeatMode.Restart
         )
     )
