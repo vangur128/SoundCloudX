@@ -1,5 +1,6 @@
 package com.example.soundcloudx.sc
 
+import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -23,6 +24,8 @@ object SoundCloudApi {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val url = "https://api.deezer.com/search?q=$encodedQuery&limit=$limit"
         
+        Log.d("MeloAPI", "Запрос: $url")
+        
         try {
             val request = Request.Builder()
                 .url(url)
@@ -31,16 +34,17 @@ object SoundCloudApi {
                 .build()
             
             val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: throw Exception("Сервер не ответил (пустое тело)")
+            Log.d("MeloAPI", "Код ответа: ${response.code}")
             
-            if (!response.isSuccessful) {
-                val errorCode = response.code
-                val errorBody = responseBody.take(100)
-                throw Exception("HTTP $errorCode: $errorBody")
-            }
+            val responseBody = response.body?.string() ?: ""
+            Log.d("MeloAPI", "Тело ответа: ${responseBody.take(300)}")
             
             if (responseBody.isBlank()) {
-                throw Exception("Пустой ответ от API")
+                throw Exception("Пустой ответ от сервера (код ${response.code})")
+            }
+            
+            if (!responseBody.trimStart().startsWith("{")) {
+                throw Exception("Сервер вернул не JSON: ${responseBody.take(200)}")
             }
             
             val root = json.parseToJsonElement(responseBody).jsonObject
@@ -69,9 +73,10 @@ object SoundCloudApi {
                     likesCount = 0
                 )
             }
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Неизвестная ошибка"
-            throw Exception(errorMsg)
+        } catch (e: Throwable) {
+            val fullError = e.toString()
+            Log.d("MeloAPI", "Ошибка: $fullError")
+            throw Exception(fullError)
         }
     }
     
