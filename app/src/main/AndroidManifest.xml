@@ -10,8 +10,8 @@
         android:label="Melo"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true"
-        android:icon="@drawable/ic_music_note"
-        android:roundIcon="@drawable/ic_music_note">
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher">
 
         <activity
             android:name=".MainActivity"
