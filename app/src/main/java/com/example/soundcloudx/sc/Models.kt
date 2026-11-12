@@ -21,10 +21,3 @@ data class SCUser(
     val username: String,
     val avatarUrl: String
 )
-
-@Serializable
-data class SCSearchResult(
-    val collection: List<SCTrack>,
-    val nextHref: String? = null,
-    val totalResults: Int = 0
-)
