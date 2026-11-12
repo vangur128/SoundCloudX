@@ -4,7 +4,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -21,12 +20,61 @@ object SoundCloudApi {
         .build()
     
     private val json = Json { ignoreUnknownKeys = true }
+    
+    private var cachedClientId: String? = null
+    private var isFetchingClientId = false
+
+    private suspend fun getClientId(): String = withContext(Dispatchers.IO) {
+        cachedClientId?.let { return@withContext it }
+        
+        if (isFetchingClientId) {
+            while (cachedClientId == null) {
+                kotlinx.coroutines.delay(500)
+            }
+            return@withContext cachedClientId!!
+        }
+        
+        isFetchingClientId = true
+        Log.d("MeloSC", "Добыча client_id...")
+        
+        try {
+            val mainPage = client.newCall(Request.Builder()
+                .url("https://soundcloud.com")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()).execute().body?.string() ?: throw Exception("Не удалось загрузить SoundCloud")
+            
+            val jsPattern = Regex("""https://a-v2\.sndcdn\.com/assets/[0-9a-f]+-[^"]+\.js""")
+            val jsUrl = jsPattern.find(mainPage)?.value ?: throw Exception("JS-файл не найден")
+            
+            Log.d("MeloSC", "JS: $jsUrl")
+            
+            val jsContent = client.newCall(Request.Builder()
+                .url(jsUrl)
+                .header("User-Agent", "Mozilla/5.0")
+                .build()).execute().body?.string() ?: throw Exception("JS не загружен")
+            
+            val clientIdPatterns = listOf(
+                Regex("""client_id:"([^"]+)"""")
+            )
+            
+            val clientId = clientIdPatterns.firstNotNullOfOrNull { pattern ->
+                pattern.find(jsContent)?.groupValues?.get(1)
+            } ?: throw Exception("client_id не найден в JS")
+            
+            cachedClientId = clientId
+            Log.d("MeloSC", "client_id получен: ${clientId.take(10)}...")
+            clientId
+        } finally {
+            isFetchingClientId = false
+        }
+    }
 
     suspend fun search(query: String, limit: Int = 50): List<SCTrack> = withContext(Dispatchers.IO) {
+        val clientId = getClientId()
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        val url = "https://api.deezer.com/search?q=$encodedQuery&limit=$limit"
+        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=$limit&client_id=$clientId"
         
-        Log.d("MeloAPI", "Запрос: $url")
+        Log.d("MeloSC", "Поиск: $query")
         
         val request = Request.Builder()
             .url(url)
@@ -35,41 +83,34 @@ object SoundCloudApi {
             .build()
         
         val response = client.newCall(request).execute()
-        Log.d("MeloAPI", "Код ответа: ${response.code}")
+        val responseBody = response.body?.string() ?: throw Exception("Пустой ответ")
         
-        val responseBody = response.body?.string() ?: ""
-        Log.d("MeloAPI", "Тело ответа: ${responseBody.take(300)}")
-        
-        if (responseBody.isBlank()) {
-            throw Exception("Пустой ответ от сервера (код ${response.code})")
-        }
-        
-        if (!responseBody.trimStart().startsWith("{")) {
-            throw Exception("Сервер вернул не JSON: ${responseBody.take(200)}")
+        if (!response.isSuccessful) {
+            throw Exception("HTTP ${response.code}: ${responseBody.take(100)}")
         }
         
         val root = json.parseToJsonElement(responseBody).jsonObject
-        val data = root["data"]?.jsonArray ?: return@withContext emptyList()
+        val collection = root["collection"]?.jsonArray ?: return@withContext emptyList()
         
-        data.map { element ->
+        collection.map { element ->
             val track = element.jsonObject
-            val artist = track["artist"]?.jsonObject
-            val album = track["album"]?.jsonObject
+            val user = track["user"]?.jsonObject
+            
+            val media = track["media"]?.jsonObject
+            val transcodings = media?.get("transcodings")?.jsonArray
+            val streamUrl = transcodings?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
             
             SCTrack(
                 id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
                 title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
                 user = SCUser(
-                    id = artist?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
-                    username = artist?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    id = user?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                    username = user?.get("username")?.jsonPrimitive?.contentOrNull ?: "Unknown",
                     avatarUrl = ""
                 ),
-                artworkUrl = album?.get("cover_big")?.jsonPrimitive?.contentOrNull 
-                    ?: album?.get("cover_medium")?.jsonPrimitive?.contentOrNull 
-                    ?: album?.get("cover")?.jsonPrimitive?.contentOrNull 
-                    ?: "",
-                duration = (track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0) * 1000,
-                streamUrl = track["preview"]?.jsonPrimitive?.contentOrNull ?: "",
+                artworkUrl = track["artwork_url"]?.jsonPrimitive?.contentOrNull?.replace("large", "t500x500") ?: "",
+                duration = track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                streamUrl = streamUrl,
                 playCount = 0,
                 likesCount = 0
             )
@@ -77,7 +118,18 @@ object SoundCloudApi {
     }
     
     suspend fun getStreamUrl(track: SCTrack): String = withContext(Dispatchers.IO) {
-        if (track.streamUrl.isBlank()) throw Exception("Превью недоступно")
-        track.streamUrl
+        if (track.streamUrl.isBlank()) throw Exception("Стрим недоступен")
+        
+        val clientId = getClientId()
+        val url = "${track.streamUrl}?client_id=$clientId"
+        
+        val response = client.newCall(Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .build()).execute()
+        
+        val body = response.body?.string() ?: throw Exception("Пустой ответ стрима")
+        val json = json.parseToJsonElement(body).jsonObject
+        json["url"]?.jsonPrimitive?.contentOrNull ?: throw Exception("URL стрима не найден")
     }
-}
+                }
