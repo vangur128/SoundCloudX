@@ -7,8 +7,7 @@ import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
-import com.example.soundcloudx.ui.PlayerScreen
-import com.example.soundcloudx.ui.SearchScreen
+import com.example.soundcloudx.ui.*
 
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
@@ -22,7 +21,7 @@ class MainActivity : ComponentActivity() {
                 var showPlayer by remember { mutableStateOf(false) }
 
                 if (showPlayer && playerViewModel.currentTrack != null) {
-                    PlayerScreen(
+                    PlayerScreenView(
                         playerViewModel = playerViewModel,
                         context = this,
                         onBackClick = { showPlayer = false }
@@ -31,7 +30,7 @@ class MainActivity : ComponentActivity() {
                     SearchScreen(
                         playerViewModel = playerViewModel,
                         context = this,
-                        onTrackClick = { showPlayer = true } 
+                        onTrackClick = { showPlayer = true }
                     )
                 }
             }
