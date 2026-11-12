@@ -1,6 +1,8 @@
 package com.example.soundcloudx.sc
 
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -20,68 +22,62 @@ object SoundCloudApi {
     
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun search(query: String, limit: Int = 50): List<SCTrack> {
+    suspend fun search(query: String, limit: Int = 50): List<SCTrack> = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val url = "https://api.deezer.com/search?q=$encodedQuery&limit=$limit"
         
         Log.d("MeloAPI", "Запрос: $url")
         
-        try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Accept", "application/json")
-                .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("Accept", "application/json")
+            .build()
+        
+        val response = client.newCall(request).execute()
+        Log.d("MeloAPI", "Код ответа: ${response.code}")
+        
+        val responseBody = response.body?.string() ?: ""
+        Log.d("MeloAPI", "Тело ответа: ${responseBody.take(300)}")
+        
+        if (responseBody.isBlank()) {
+            throw Exception("Пустой ответ от сервера (код ${response.code})")
+        }
+        
+        if (!responseBody.trimStart().startsWith("{")) {
+            throw Exception("Сервер вернул не JSON: ${responseBody.take(200)}")
+        }
+        
+        val root = json.parseToJsonElement(responseBody).jsonObject
+        val data = root["data"]?.jsonArray ?: return@withContext emptyList()
+        
+        data.map { element ->
+            val track = element.jsonObject
+            val artist = track["artist"]?.jsonObject
+            val album = track["album"]?.jsonObject
             
-            val response = client.newCall(request).execute()
-            Log.d("MeloAPI", "Код ответа: ${response.code}")
-            
-            val responseBody = response.body?.string() ?: ""
-            Log.d("MeloAPI", "Тело ответа: ${responseBody.take(300)}")
-            
-            if (responseBody.isBlank()) {
-                throw Exception("Пустой ответ от сервера (код ${response.code})")
-            }
-            
-            if (!responseBody.trimStart().startsWith("{")) {
-                throw Exception("Сервер вернул не JSON: ${responseBody.take(200)}")
-            }
-            
-            val root = json.parseToJsonElement(responseBody).jsonObject
-            val data = root["data"]?.jsonArray ?: return emptyList()
-            
-            return data.map { element ->
-                val track = element.jsonObject
-                val artist = track["artist"]?.jsonObject
-                val album = track["album"]?.jsonObject
-                
-                SCTrack(
-                    id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
-                    title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
-                    user = SCUser(
-                        id = artist?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
-                        username = artist?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown",
-                        avatarUrl = ""
-                    ),
-                    artworkUrl = album?.get("cover_big")?.jsonPrimitive?.contentOrNull 
-                        ?: album?.get("cover_medium")?.jsonPrimitive?.contentOrNull 
-                        ?: album?.get("cover")?.jsonPrimitive?.contentOrNull 
-                        ?: "",
-                    duration = (track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0) * 1000,
-                    streamUrl = track["preview"]?.jsonPrimitive?.contentOrNull ?: "",
-                    playCount = 0,
-                    likesCount = 0
-                )
-            }
-        } catch (e: Throwable) {
-            val fullError = e.toString()
-            Log.d("MeloAPI", "Ошибка: $fullError")
-            throw Exception(fullError)
+            SCTrack(
+                id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                user = SCUser(
+                    id = artist?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                    username = artist?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    avatarUrl = ""
+                ),
+                artworkUrl = album?.get("cover_big")?.jsonPrimitive?.contentOrNull 
+                    ?: album?.get("cover_medium")?.jsonPrimitive?.contentOrNull 
+                    ?: album?.get("cover")?.jsonPrimitive?.contentOrNull 
+                    ?: "",
+                duration = (track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0) * 1000,
+                streamUrl = track["preview"]?.jsonPrimitive?.contentOrNull ?: "",
+                playCount = 0,
+                likesCount = 0
+            )
         }
     }
     
-    suspend fun getStreamUrl(track: SCTrack): String {
+    suspend fun getStreamUrl(track: SCTrack): String = withContext(Dispatchers.IO) {
         if (track.streamUrl.isBlank()) throw Exception("Превью недоступно")
-        return track.streamUrl
+        track.streamUrl
     }
 }
