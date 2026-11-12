@@ -12,7 +12,8 @@ data class SCTrack(
     val streamUrl: String,
     val downloadUrl: String? = null,
     val playCount: Long = 0,
-    val likesCount: Long = 0
+    val likesCount: Long = 0,
+    val isLocal: Boolean = false
 )
 
 @Serializable
