@@ -67,9 +67,8 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
                             errorMessage = "Ничего не найдено. Попробуй другой запрос."
                         }
                         results = found
-                    } catch (e: Exception) {
-                        val errorMsg = e.message ?: "Неизвестная ошибка"
-                        errorMessage = "Ошибка: $errorMsg"
+                    } catch (e: Throwable) {
+                        errorMessage = "Ошибка: ${e.toString()}"
                         results = emptyList()
                     } finally {
                         isLoading = false
