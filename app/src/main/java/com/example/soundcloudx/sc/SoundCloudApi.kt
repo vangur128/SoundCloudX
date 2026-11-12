@@ -1,55 +1,93 @@
 package com.example.soundcloudx.sc
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 object SoundCloudApi {
-    private val http = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+    
     private val json = Json { ignoreUnknownKeys = true }
-
-    @Volatile private var clientId: String? = null
-
-    private suspend fun getClientId(): String = withContext(Dispatchers.IO) {
-        clientId?.let { return@withContext it }
-        val request = Request.Builder().url("https://soundcloud.com").build()
-        val html = http.newCall(request).execute().body?.string() ?: throw Exception("Нет ответа")
+    
+    // Публичный клиент ID SoundCloud (может измениться, но работает)
+    private const val CLIENT_ID = "a3e059563d7fd3372b49b37f00a00bcf"
+    
+    suspend fun search(query: String, limit: Int = 50): List<SCTrack> {
+        val url = "https://api-v2.soundcloud.com/search/tracks?q=$query&limit=$limit&client_id=$CLIENT_ID"
         
-        val scriptUrls = Regex("""src="(https://[^"]*sndcdn\.com/assets/[^"]+\.js)"""")
-            .findAll(html).map { it.groupValues[1] }.toList().reversed()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+        
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: throw Exception("Empty response")
+        
+        val jsonObject = json.parseToJsonElement(body).jsonObject
+        val collection = jsonObject["collection"]?.jsonArray ?: return emptyList()
+        
+        return collection.map { trackElement ->
+            val track = trackElement.jsonObject
             
-        for (u in scriptUrls.take(6)) {
-            val js = http.newCall(Request.Builder().url(u).build()).execute().body?.string() ?: continue
-            Regex("""client_id\s*:\s*"([A-Za-z0-9]{20,})"""").find(js)?.let {
-                clientId = it.groupValues[1]
-                return@withContext clientId!!
-            }
+            val userObj = track["user"]?.jsonObject
+            val user = SCUser(
+                id = track["user_id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                username = userObj?.get("username")?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                avatarUrl = userObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull ?: ""
+            )
+            
+            val mediaObj = track["media"]?.jsonObject
+            val transcodings = mediaObj?.get("transcodings")?.jsonArray
+            val streamUrl = transcodings?.firstOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull ?: ""
+            
+            SCTrack(
+                id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                user = user,
+                artworkUrl = track["artwork_url"]?.jsonPrimitive?.contentOrNull?.replace("large", "t500x500") ?: "",
+                duration = track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                streamUrl = streamUrl,
+                playCount = track["playback_count"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                likesCount = track["likes_count"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0
+            )
         }
-        throw Exception("Не удалось найти client_id")
     }
-
-    suspend fun search(query: String): List<SCTrack> = withContext(Dispatchers.IO) {
-        val cid = getClientId()
-        val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=20&client_id=$cid"
+    
+    suspend fun getStreamUrl(track: SCTrack): String {
+        if (track.streamUrl.isBlank()) return ""
         
-        val response = http.newCall(Request.Builder().url(url).build()).execute()
-        val body = response.body?.string() ?: throw Exception("Пустой ответ")
+        val url = "${track.streamUrl}?client_id=$CLIENT_ID"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .build()
         
-        json.decodeFromString<SCSearchResponse>(body).collection
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: throw Exception("Empty stream response")
+        
+        val json = json.parseToJsonElement(body).jsonObject
+        return json["url"]?.jsonPrimitive?.contentOrNull ?: throw Exception("No stream URL")
     }
-
-    suspend fun getStreamUrl(track: SCTrack): String = withContext(Dispatchers.IO) {
-        val cid = getClientId()
-        val transcoding = track.media.transcodings.firstOrNull { 
-            it.format.protocol == "progressive" 
-        } ?: track.media.transcodings.first()
+    
+    suspend fun downloadTrack(track: SCTrack): ByteArray? {
+        if (track.downloadUrl.isNullOrBlank()) return null
         
-        val url = "${transcoding.url}?client_id=$cid"
-        val response = http.newCall(Request.Builder().url(url).build()).execute()
-        val body = response.body?.string() ?: throw Exception("Пустой ответ стрима")
+        val url = "${track.downloadUrl}?client_id=$CLIENT_ID"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .build()
         
-        json.decodeFromString<SCStreamResponse>(body).url
+        val response = client.newCall(request).execute()
+        return response.body?.bytes()
     }
 }
