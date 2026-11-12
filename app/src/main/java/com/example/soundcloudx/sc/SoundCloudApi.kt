@@ -13,8 +13,8 @@ import java.util.concurrent.TimeUnit
 
 object SoundCloudApi {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
     
     private val json = Json { ignoreUnknownKeys = true }
@@ -25,14 +25,23 @@ object SoundCloudApi {
         
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "application/json")
+            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
             .build()
         
         val response = client.newCall(request).execute()
-        if (!response.isSuccessful) throw Exception("Ошибка сети: ${response.code}")
+        val responseBody = response.body?.string() ?: ""
         
-        val body = response.body?.string() ?: throw Exception("Пустой ответ")
-        val root = json.parseToJsonElement(body).jsonObject
+        if (!response.isSuccessful) {
+            throw Exception("HTTP ${response.code}: ${responseBody.take(200)}")
+        }
+        
+        if (responseBody.isBlank()) {
+            throw Exception("Пустой ответ от сервера")
+        }
+        
+        val root = json.parseToJsonElement(responseBody).jsonObject
         val data = root["data"]?.jsonArray ?: return emptyList()
         
         return data.map { element ->
@@ -61,7 +70,7 @@ object SoundCloudApi {
     }
     
     suspend fun getStreamUrl(track: SCTrack): String {
-        if (track.streamUrl.isBlank()) throw Exception("Превью недоступно")
+        if (track.streamUrl.isBlank()) throw Exception("Превью недоступно для этого трека")
         return track.streamUrl
     }
 }
