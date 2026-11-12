@@ -36,8 +36,7 @@ data class FavoriteEntity(
 
 @Entity(tableName = "history")
 data class HistoryEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val trackId: Long,
+    @PrimaryKey val trackId: Long, // Теперь ID трека = ID записи, чтобы не было дублей
     val playedAt: Long = System.currentTimeMillis()
 )
 
@@ -48,6 +47,14 @@ interface TrackDao {
     
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getTrackById(id: Long): TrackEntity?
+
+    // Умный запрос: сам достает треки из истории по порядку
+    @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM history ORDER BY playedAt DESC LIMIT 100)")
+    fun getRecentTracks(): Flow<List<TrackEntity>>
+
+    // Умный запрос: сам достает треки из избранного
+    @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM favorites ORDER BY addedAt DESC LIMIT 100)")
+    fun getFavoriteTracks(): Flow<List<TrackEntity>>
 }
 
 @Dao
@@ -91,7 +98,7 @@ interface HistoryDao {
     @Query("SELECT * FROM history ORDER BY playedAt DESC LIMIT 100")
     fun getRecentHistory(): Flow<List<HistoryEntity>>
     
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addToHistory(history: HistoryEntity)
     
     @Query("DELETE FROM history")
@@ -100,7 +107,7 @@ interface HistoryDao {
 
 @Database(
     entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, FavoriteEntity::class, HistoryEntity::class],
-    version = 1
+    version = 2 // Обновили версию, чтобы применились новые таблицы
 )
 abstract class MeloDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
@@ -118,7 +125,8 @@ abstract class MeloDatabase : RoomDatabase() {
                     context.applicationContext,
                     MeloDatabase::class.java,
                     "melo_database"
-                ).build()
+                ).fallbackToDestructiveMigration() // Сбросит старую базу, если были ошибки
+                .build()
                 INSTANCE = instance
                 instance
             }
