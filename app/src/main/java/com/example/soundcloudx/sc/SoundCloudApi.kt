@@ -21,58 +21,12 @@ object SoundCloudApi {
     
     private val json = Json { ignoreUnknownKeys = true }
     
-    private var cachedClientId: String? = null
-    private var isFetchingClientId = false
-
-    private suspend fun getClientId(): String = withContext(Dispatchers.IO) {
-        cachedClientId?.let { return@withContext it }
-        
-        if (isFetchingClientId) {
-            while (cachedClientId == null) {
-                kotlinx.coroutines.delay(500)
-            }
-            return@withContext cachedClientId!!
-        }
-        
-        isFetchingClientId = true
-        Log.d("MeloSC", "Добыча client_id...")
-        
-        try {
-            val mainPage = client.newCall(Request.Builder()
-                .url("https://soundcloud.com")
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()).execute().body?.string() ?: throw Exception("Не удалось загрузить SoundCloud")
-            
-            val jsPattern = Regex("""https://a-v2\.sndcdn\.com/assets/[0-9a-f]+-[^"]+\.js""")
-            val jsUrl = jsPattern.find(mainPage)?.value ?: throw Exception("JS-файл не найден")
-            
-            Log.d("MeloSC", "JS: $jsUrl")
-            
-            val jsContent = client.newCall(Request.Builder()
-                .url(jsUrl)
-                .header("User-Agent", "Mozilla/5.0")
-                .build()).execute().body?.string() ?: throw Exception("JS не загружен")
-            
-            val clientIdPatterns = listOf(
-                Regex("""client_id:"([^"]+)"""")
-            )
-            
-            val clientId = clientIdPatterns.firstNotNullOfOrNull { pattern ->
-                pattern.find(jsContent)?.groupValues?.get(1)
-            } ?: throw Exception("client_id не найден в JS")
-            
-            cachedClientId = clientId
-            Log.d("MeloSC", "client_id получен: ${clientId.take(10)}...")
-            clientId
-        } finally {
-            isFetchingClientId = false
-        }
-    }
+    // Рабочий client_id (обновлён)
+    private const val CLIENT_ID = "a3e059563d7fd3372b49b37f00a00bcf"
 
     suspend fun search(query: String, limit: Int = 50): List<SCTrack> = withContext(Dispatchers.IO) {
-        val clientId = getClientId()
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=$limit&client_id=$clientId"
+        val url = "https://api-v2.soundcloud.com/search/tracks?q=$encodedQuery&limit=$limit&client_id=$CLIENT_ID"
         
         Log.d("MeloSC", "Поиск: $query")
         
@@ -120,8 +74,7 @@ object SoundCloudApi {
     suspend fun getStreamUrl(track: SCTrack): String = withContext(Dispatchers.IO) {
         if (track.streamUrl.isBlank()) throw Exception("Стрим недоступен")
         
-        val clientId = getClientId()
-        val url = "${track.streamUrl}?client_id=$clientId"
+        val url = "${track.streamUrl}?client_id=$CLIENT_ID"
         
         val response = client.newCall(Request.Builder()
             .url(url)
@@ -132,4 +85,4 @@ object SoundCloudApi {
         val json = json.parseToJsonElement(body).jsonObject
         json["url"]?.jsonPrimitive?.contentOrNull ?: throw Exception("URL стрима не найден")
     }
-                }
+}
