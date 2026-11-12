@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -44,13 +45,14 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
+import com.example.soundcloudx.db.*
 import com.example.soundcloudx.sc.LocalMusicApi
 import com.example.soundcloudx.sc.SoundCloudApi
 import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-// --- VIEW MODEL ---
 class PlayerViewModel : ViewModel() {
     var exoPlayer: ExoPlayer? = null
     var mediaSession: androidx.media3.session.MediaSession? = null
@@ -68,10 +70,7 @@ class PlayerViewModel : ViewModel() {
             exoPlayer = ExoPlayer.Builder(context)
                 .setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
                 .build()
-            
-            // Создаем MediaSession для интеграции с системой
             mediaSession = androidx.media3.session.MediaSession.Builder(context, exoPlayer!!).build()
-            
             exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
                 override fun onPlaybackStateChanged(state: Int) {
@@ -89,7 +88,7 @@ class PlayerViewModel : ViewModel() {
                 currentTrack = track
                 if (trackList.isNotEmpty()) { queue = trackList; queueIndex = trackList.indexOf(track).coerceAtLeast(0) }
                 initPlayer(context)
-                val streamUrl = SoundCloudApi.getStreamUrl(track)
+                val streamUrl = SoundCloudApi.getStreamUrl(track, context)
                 exoPlayer?.setMediaItem(MediaItem.fromUri(streamUrl))
                 exoPlayer?.prepare()
                 exoPlayer?.play()
@@ -121,7 +120,6 @@ class PlayerViewModel : ViewModel() {
     override fun onCleared() { super.onCleared(); mediaSession?.release(); exoPlayer?.release(); exoPlayer = null }
 }
 
-// --- MAIN ACTIVITY ---
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
@@ -132,7 +130,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 var showPlayer by remember { mutableStateOf(false) }
                 
-                // Запрос разрешений для локальной музыки
+                val context = LocalContext.current
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { }
@@ -143,7 +141,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Manifest.permission.READ_EXTERNAL_STORAGE
                     }
-                    if (ContextCompat.checkSelfPermission(this@MainActivity, permission) != PackageManager.PERMISSION_GRANTED) {
+                    if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
                         permissionLauncher.launch(permission)
                     }
                 }
@@ -158,29 +156,34 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- SEARCH SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClick: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
-    var localTracks by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableStateOf(0) }
+    var showSettings by remember { mutableStateOf(false) }
+    var clientIdInput by remember { mutableStateOf(SoundCloudApi.getSavedClientId(context)) }
     val scope = rememberCoroutineScope()
-
-    // Загружаем локальные треки при старте
-    LaunchedEffect(Unit) { 
-        try { localTracks = LocalMusicApi.getLocalTracks(context) } catch (_: Exception) {} 
-    }
+    
+    val db = remember { MeloDatabase.getDatabase(context) }
+    val playlists by db.playlistDao().getAllPlaylists().collectAsState(initial = emptyList())
+    val favorites by db.favoriteDao().getAllFavorites().collectAsState(initial = emptyList())
+    val history by db.historyDao().getRecentHistory().collectAsState(initial = emptyList())
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
-        Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8), modifier = Modifier.padding(bottom = 16.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8))
+            IconButton(onClick = { showSettings = true }) {
+                Icon(Icons.Default.Settings, "Настройки", tint = Color(0xFFC9A8E8))
+            }
+        }
         
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF2A1F35), contentColor = Color(0xFFC9A8E8)) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("SoundCloud", fontSize = 14.sp) })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Моя музыка (${localTracks.size})", fontSize = 14.sp) })
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Поиск", fontSize = 14.sp) })
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Медиатека", fontSize = 14.sp) })
         }
         Spacer(Modifier.height(16.dp))
 
@@ -195,7 +198,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
                 isLoading = true; errorMessage = null
                 scope.launch {
                     try {
-                        val found = SoundCloudApi.search(query, limit = 30)
+                        val found = SoundCloudApi.search(query, limit = 30, context)
                         if (found.isEmpty()) errorMessage = "Ничего не найдено."
                         results = found
                     } catch (e: Throwable) { errorMessage = "Ошибка: ${e.toString()}"; results = emptyList() }
@@ -206,40 +209,68 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
                 if (isLoading) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
                 else Text("Найти", fontWeight = FontWeight.Bold)
             }
-        }
-        Spacer(Modifier.height(16.dp))
-
-        errorMessage?.let { error ->
-            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF331133))) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Error, null, tint = Color(0xFFFF6B9B))
-                    Spacer(Modifier.width(8.dp))
-                    Text(error, color = Color(0xFFFF6B9B), modifier = Modifier.weight(1f))
-                }
-            }
             Spacer(Modifier.height(16.dp))
-        }
-
-        val displayTracks = if (selectedTab == 0) results else localTracks
-        if (displayTracks.isEmpty() && selectedTab == 1) Text("Локальная музыка не найдена или нет прав доступа", color = Color.Gray, modifier = Modifier.padding(16.dp))
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(displayTracks) { track ->
-                Row(modifier = Modifier.fillMaxWidth().clickable { playerViewModel.playTrack(track, context, displayTracks); onTrackClick() }
-                    .background(Color(0xFF2A1F35), RoundedCornerShape(8.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (track.artworkUrl.isNotBlank()) AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
-                    else Icon(Icons.Default.MusicNote, null, tint = Color(0xFF9B7CB6), modifier = Modifier.size(48.dp).background(Color(0xFF3D2E4A), RoundedCornerShape(4.dp)).padding(8.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(track.title, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(track.user.username, color = Color(0xFF9B7CB6), fontSize = 12.sp, maxLines = 1)
+            errorMessage?.let { error ->
+                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF331133))) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Error, null, tint = Color(0xFFFF6B9B))
+                        Spacer(Modifier.width(8.dp))
+                        Text(error, color = Color(0xFFFF6B9B), modifier = Modifier.weight(1f))
                     }
-                    Icon(Icons.Default.PlayArrow, "Play", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp))
                 }
             }
-            item { Spacer(Modifier.height(80.dp)) }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(results) { track ->
+                    Row(modifier = Modifier.fillMaxWidth().clickable { 
+                        playerViewModel.playTrack(track, context, results)
+                        scope.launch {
+                            db.trackDao().insertTrack(track.toEntity())
+                            db.historyDao().addToHistory(HistoryEntity(trackId = track.id))
+                        }
+                        onTrackClick() 
+                    }
+                        .background(Color(0xFF2A1F35), RoundedCornerShape(8.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (track.artworkUrl.isNotBlank()) AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+                        else Icon(Icons.Default.MusicNote, null, tint = Color(0xFF9B7CB6), modifier = Modifier.size(48.dp).background(Color(0xFF3D2E4A), RoundedCornerShape(4.dp)).padding(8.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(track.title, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(track.user.username, color = Color(0xFF9B7CB6), fontSize = 12.sp, maxLines = 1)
+                        }
+                        Icon(Icons.Default.PlayArrow, "Play", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item { MediaLibraryItem(icon = Icons.Default.MusicNote, title = "Все композиции", count = null, onClick = { }) }
+                item { MediaLibraryItem(icon = Icons.Default.Favorite, title = "Избранное", count = favorites.size, onClick = { }) }
+                item { MediaLibraryItem(icon = Icons.Default.History, title = "Недавно воспроизведенное", count = history.size, onClick = { }) }
+                item { MediaLibraryItem(icon = Icons.Default.QueueMusic, title = "Плейлисты", count = playlists.size, onClick = { }) }
+                item { MediaLibraryItem(icon = Icons.Default.Settings, title = "Настройки", count = null, onClick = { showSettings = true }) }
+            }
         }
     }
+    
+    if (showSettings) {
+        AlertDialog(
+            onDismissRequest = { showSettings = false },
+            title = { Text("Настройки SoundCloud", color = Color.White) },
+            text = {
+                Column {
+                    Text("Вставь client_id:", color = Color.Gray, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = clientIdInput, onValueChange = { clientIdInput = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = { SoundCloudApi.saveClientId(context, clientIdInput); showSettings = false }) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { showSettings = false }) { Text("Отмена") } },
+            containerColor = Color(0xFF2A1F35)
+        )
+    }
+    
     playerViewModel.currentTrack?.let { track ->
         Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF2A1F35)).clickable { onTrackClick() }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (track.artworkUrl.isNotBlank()) AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
@@ -256,7 +287,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     }
 }
 
-// --- PLAYER SCREEN ---
 @Composable
 fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackClick: () -> Unit) {
     val track = playerViewModel.currentTrack ?: return
@@ -310,6 +340,32 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
         }
     }
 }
+
+@Composable
+fun MediaLibraryItem(icon: ImageVector, title: String, count: Int?, onClick: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().clickable { onClick() }.background(Color(0xFF2A1F35), RoundedCornerShape(12.dp)).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        }
+        if (count != null) {
+            Text("$count", color = Color(0xFF9B7CB6), fontSize = 14.sp)
+        }
+        Icon(Icons.Default.ChevronRight, null, tint = Color(0xFF9B7CB6))
+    }
+}
+
+fun SCTrack.toEntity() = TrackEntity(
+    id = id,
+    title = title,
+    artist = user.username,
+    artworkUrl = artworkUrl,
+    duration = duration,
+    streamUrl = streamUrl,
+    isLocal = isLocal
+)
 
 fun formatDuration(ms: Long): String {
     if (ms <= 0) return "0:00"
