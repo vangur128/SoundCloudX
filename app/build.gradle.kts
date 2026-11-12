@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("org.jetbrains.kotlin.kapt") // <-- ВОТ ЭТО ДОБАВИЛИ, ЧТОБЫ РАБОТАЛА БАЗА ДАННЫХ
 }
 
 android {
@@ -52,12 +53,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("io.coil-kt:coil-compose:2.5.0")
 
-    // Room для оффлайн-хранения
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    implementation("androidx.media3:media3-session:1.2.1")
+    // Room для медиатеки (оффлайн-хранение)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
-    annotationProcessor("androidx.room:room-compiler:2.6.1")
 }
