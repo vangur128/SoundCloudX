@@ -10,9 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,7 +24,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,9 +46,9 @@ import com.example.soundcloudx.sc.LocalMusicApi
 import com.example.soundcloudx.sc.SoundCloudApi
 import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
+// --- VIEW MODEL ---
 class PlayerViewModel : ViewModel() {
     var exoPlayer: ExoPlayer? = null
     var mediaSession: androidx.media3.session.MediaSession? = null
@@ -97,18 +93,30 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
+    fun playLocalTrack(track: SCTrack, context: Context, trackList: List<SCTrack> = emptyList()) {
+        currentTrack = track
+        if (trackList.isNotEmpty()) { queue = trackList; queueIndex = trackList.indexOf(track).coerceAtLeast(0) }
+        initPlayer(context)
+        exoPlayer?.setMediaItem(MediaItem.fromUri(track.streamUrl))
+        exoPlayer?.prepare()
+        exoPlayer?.play()
+        isPlaying = true
+    }
+
     fun togglePlayPause() { if (isPlaying) { exoPlayer?.pause(); isPlaying = false } else { exoPlayer?.play(); isPlaying = true } }
     fun seekTo(position: Long) { exoPlayer?.seekTo(position); currentPosition = position }
     fun nextTrack(context: Context) {
         if (queue.isEmpty()) return
         queueIndex = if (isShuffle) (0 until queue.size).random() else (queueIndex + 1) % queue.size
-        playTrack(queue[queueIndex], context, queue)
+        val next = queue[queueIndex]
+        if (next.isLocal) playLocalTrack(next, context, queue) else playTrack(next, context, queue)
     }
     fun previousTrack(context: Context) {
         if (queue.isEmpty()) return
         if (currentPosition > 3000) { seekTo(0); return }
         queueIndex = if (queueIndex - 1 < 0) queue.size - 1 else queueIndex - 1
-        playTrack(queue[queueIndex], context, queue)
+        val prev = queue[queueIndex]
+        if (prev.isLocal) playLocalTrack(prev, context, queue) else playTrack(prev, context, queue)
     }
     fun updatePosition() {
         currentPosition = exoPlayer?.currentPosition ?: 0L
@@ -120,6 +128,7 @@ class PlayerViewModel : ViewModel() {
     override fun onCleared() { super.onCleared(); mediaSession?.release(); exoPlayer?.release(); exoPlayer = null }
 }
 
+// --- MAIN ACTIVITY ---
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
@@ -156,6 +165,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// --- SEARCH SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClick: () -> Unit) {
@@ -166,12 +176,23 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     var selectedTab by remember { mutableStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var clientIdInput by remember { mutableStateOf(SoundCloudApi.getSavedClientId(context)) }
+    var mediaLibrarySection by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     
     val db = remember { MeloDatabase.getDatabase(context) }
+    
+    // Прямые запросы к БД (работают мгновенно и реактивно)
+    val recentTracks by db.trackDao().getRecentTracks().collectAsState(initial = emptyList())
+    val favoriteTracks by db.trackDao().getFavoriteTracks().collectAsState(initial = emptyList())
     val playlists by db.playlistDao().getAllPlaylists().collectAsState(initial = emptyList())
-    val favorites by db.favoriteDao().getAllFavorites().collectAsState(initial = emptyList())
-    val history by db.historyDao().getRecentHistory().collectAsState(initial = emptyList())
+    
+    var localTracks by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 1) {
+            localTracks = LocalMusicApi.getLocalTracks(context)
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -182,8 +203,8 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
         }
         
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF2A1F35), contentColor = Color(0xFFC9A8E8)) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Поиск", fontSize = 14.sp) })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Медиатека", fontSize = 14.sp) })
+            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0; mediaLibrarySection = null }, text = { Text("Поиск", fontSize = 14.sp) })
+            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1; mediaLibrarySection = null }, text = { Text("Медиатека", fontSize = 14.sp) })
         }
         Spacer(Modifier.height(16.dp))
 
@@ -241,14 +262,41 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
                     }
                 }
             }
-        } else {
+        } else if (mediaLibrarySection == null) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { MediaLibraryItem(icon = Icons.Default.MusicNote, title = "Все композиции", count = null, onClick = { }) }
-                item { MediaLibraryItem(icon = Icons.Default.Favorite, title = "Избранное", count = favorites.size, onClick = { }) }
-                item { MediaLibraryItem(icon = Icons.Default.History, title = "Недавно воспроизведенное", count = history.size, onClick = { }) }
+                item { MediaLibraryItem(icon = Icons.Default.MusicNote, title = "Локальная музыка", count = localTracks.size, onClick = { mediaLibrarySection = "local" }) }
+                item { MediaLibraryItem(icon = Icons.Default.Favorite, title = "Избранное", count = favoriteTracks.size, onClick = { mediaLibrarySection = "favorites" }) }
+                item { MediaLibraryItem(icon = Icons.Default.History, title = "Недавно прослушано", count = recentTracks.size, onClick = { mediaLibrarySection = "history" }) }
                 item { MediaLibraryItem(icon = Icons.Default.QueueMusic, title = "Плейлисты", count = playlists.size, onClick = { }) }
-                item { MediaLibraryItem(icon = Icons.Default.Settings, title = "Настройки", count = null, onClick = { showSettings = true }) }
+                item { MediaLibraryItem(icon = Icons.Default.Settings, title = "Настройки SoundCloud", count = null, onClick = { showSettings = true }) }
             }
+        } else if (mediaLibrarySection == "local") {
+            BackButton { mediaLibrarySection = null }
+            if (localTracks.isEmpty()) Text("Локальные треки не найдены.", color = Color.Gray, modifier = Modifier.padding(16.dp))
+            else TrackList(tracks = localTracks.map { it.toEntity() }, isLocal = true, onPlay = { entity ->
+                val sc = entity.toSCTrack()
+                playerViewModel.playLocalTrack(sc, context, localTracks)
+                scope.launch { db.historyDao().addToHistory(HistoryEntity(trackId = entity.id)) }
+                onTrackClick()
+            }, db = db, scope = scope)
+        } else if (mediaLibrarySection == "favorites") {
+            BackButton { mediaLibrarySection = null }
+            if (favoriteTracks.isEmpty()) Text("Избранное пусто.", color = Color.Gray, modifier = Modifier.padding(16.dp))
+            else TrackList(tracks = favoriteTracks, isLocal = false, onPlay = { entity ->
+                val sc = entity.toSCTrack()
+                playerViewModel.playTrack(sc, context, favoriteTracks.map { it.toSCTrack() })
+                scope.launch { db.historyDao().addToHistory(HistoryEntity(trackId = entity.id)) }
+                onTrackClick()
+            }, db = db, scope = scope, showRemoveFavorite = true)
+        } else if (mediaLibrarySection == "history") {
+            BackButton { mediaLibrarySection = null }
+            if (recentTracks.isEmpty()) Text("История пуста. Послушай что-нибудь!", color = Color.Gray, modifier = Modifier.padding(16.dp))
+            else TrackList(tracks = recentTracks, isLocal = false, onPlay = { entity ->
+                val sc = entity.toSCTrack()
+                if (sc.isLocal) playerViewModel.playLocalTrack(sc, context) else playerViewModel.playTrack(sc, context)
+                scope.launch { db.historyDao().addToHistory(HistoryEntity(trackId = entity.id)) }
+                onTrackClick()
+            }, db = db, scope = scope)
         }
     }
     
@@ -260,12 +308,11 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
                 Column {
                     Text("Вставь client_id:", color = Color.Gray, fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = clientIdInput, onValueChange = { clientIdInput = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = clientIdInput, onValueChange = { clientIdInput = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF9B7CB6), unfocusedBorderColor = Color(0xFF3D2E4A)))
                 }
             },
-            confirmButton = {
-                Button(onClick = { SoundCloudApi.saveClientId(context, clientIdInput); showSettings = false }) { Text("Сохранить") }
-            },
+            confirmButton = { Button(onClick = { SoundCloudApi.saveClientId(context, clientIdInput); showSettings = false }) { Text("Сохранить") } },
             dismissButton = { TextButton(onClick = { showSettings = false }) { Text("Отмена") } },
             containerColor = Color(0xFF2A1F35)
         )
@@ -288,11 +335,60 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
 }
 
 @Composable
+fun BackButton(onClick: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.ArrowBack, null, tint = Color(0xFFC9A8E8))
+        Spacer(Modifier.width(8.dp))
+        Text("Назад", color = Color(0xFFC9A8E8), fontSize = 16.sp)
+    }
+}
+
+@Composable
+fun TrackList(
+    tracks: List<TrackEntity>, 
+    isLocal: Boolean, 
+    onPlay: (TrackEntity) -> Unit, 
+    db: MeloDatabase, 
+    scope: kotlinx.coroutines.CoroutineScope,
+    showRemoveFavorite: Boolean = false
+) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(tracks) { track ->
+            Row(modifier = Modifier.fillMaxWidth().clickable { onPlay(track) }
+                .background(Color(0xFF2A1F35), RoundedCornerShape(8.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (track.artworkUrl.isNotBlank()) AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
+                else Icon(Icons.Default.MusicNote, null, tint = Color(0xFF9B7CB6), modifier = Modifier.size(48.dp).background(Color(0xFF3D2E4A), RoundedCornerShape(4.dp)).padding(8.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(track.title, color = Color.White, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(track.artist, color = Color(0xFF9B7CB6), fontSize = 12.sp, maxLines = 1)
+                }
+                if (showRemoveFavorite) {
+                    IconButton(onClick = { scope.launch { db.favoriteDao().removeFavorite(track.id) } }) {
+                        Icon(Icons.Default.Favorite, "Remove", tint = Color(0xFFFF6B9B), modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.PlayArrow, "Play", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp))
+                }
+            }
+        }
+    }
+}
+
+// --- PLAYER SCREEN ---
+@Composable
 fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackClick: () -> Unit) {
     val track = playerViewModel.currentTrack ?: return
     val isPlaying = playerViewModel.isPlaying
+    val db = MeloDatabase.getDatabase(context)
+    var isFavorite by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    
     LaunchedEffect(isPlaying) { while (isPlaying) { playerViewModel.updatePosition(); delay(1000) } }
-    val rotation by animateFloatAsState(targetValue = if (isPlaying) 360f else 0f, animationSpec = infiniteRepeatable(animation = tween(20000)))
+    LaunchedEffect(track.id) {
+        isFavorite = db.favoriteDao().isFavorite(track.id)
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A1025), Color(0xFF0D0815)))).padding(24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, "Back", tint = Color(0xFFC9A8E8)) }
@@ -301,7 +397,7 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
         }
         Spacer(Modifier.height(32.dp))
         AsyncImage(model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
+            modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(40.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -309,7 +405,21 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
                 Spacer(Modifier.height(4.dp))
                 Text(track.user.username, color = Color(0xFF9B7CB6), fontSize = 16.sp, maxLines = 1)
             }
-            IconButton(onClick = { }) { Icon(Icons.Default.FavoriteBorder, "Like", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp)) }
+            IconButton(onClick = { 
+                scope.launch {
+                    if (isFavorite) {
+                        db.favoriteDao().removeFavorite(track.id)
+                        isFavorite = false
+                    } else {
+                        db.trackDao().insertTrack(track.toEntity())
+                        db.favoriteDao().addFavorite(FavoriteEntity(trackId = track.id))
+                        isFavorite = true
+                    }
+                }
+            }) {
+                Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", 
+                    tint = if (isFavorite) Color(0xFFFF6B9B) else Color(0xFFC9A8E8), modifier = Modifier.size(32.dp))
+            }
         }
         Spacer(Modifier.height(32.dp))
         Slider(value = playerViewModel.currentPosition.toFloat(), onValueChange = { playerViewModel.seekTo(it.toLong()) },
@@ -350,22 +460,13 @@ fun MediaLibraryItem(icon: ImageVector, title: String, count: Int?, onClick: () 
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
-        if (count != null) {
-            Text("$count", color = Color(0xFF9B7CB6), fontSize = 14.sp)
-        }
+        if (count != null) Text("$count", color = Color(0xFF9B7CB6), fontSize = 14.sp)
         Icon(Icons.Default.ChevronRight, null, tint = Color(0xFF9B7CB6))
     }
 }
 
-fun SCTrack.toEntity() = TrackEntity(
-    id = id,
-    title = title,
-    artist = user.username,
-    artworkUrl = artworkUrl,
-    duration = duration,
-    streamUrl = streamUrl,
-    isLocal = isLocal
-)
+fun SCTrack.toEntity() = TrackEntity(id = id, title = title, artist = user.username, artworkUrl = artworkUrl, duration = duration, streamUrl = streamUrl, isLocal = isLocal)
+fun TrackEntity.toSCTrack() = SCTrack(id = id, title = title, user = SCUser(0, artist, ""), artworkUrl = artworkUrl, duration = duration, streamUrl = streamUrl, isLocal = isLocal)
 
 fun formatDuration(ms: Long): String {
     if (ms <= 0) return "0:00"
