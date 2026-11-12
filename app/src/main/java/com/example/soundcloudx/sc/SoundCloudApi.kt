@@ -18,8 +18,8 @@ object SoundCloudApi {
     
     private val json = Json { ignoreUnknownKeys = true }
     
-    // Публичный клиент ID SoundCloud (может измениться, но работает)
-    private const val CLIENT_ID = "a3e059563d7fd3372b49b37f00a00bcf"
+    // ВСТАВЬ СЮДА СВОЙ НОВЫЙ КЛЮЧ ВМЕСТО ЭТОГО, ЕСЛИ ПОИСК ВСЁ ЕЩЁ НЕ РАБОТАЕТ
+    private const val CLIENT_ID = "2t9loNQH90kzJcsFCODdigxfp325aq4z"
     
     suspend fun search(query: String, limit: Int = 50): List<SCTrack> {
         val url = "https://api-v2.soundcloud.com/search/tracks?q=$query&limit=$limit&client_id=$CLIENT_ID"
@@ -74,20 +74,7 @@ object SoundCloudApi {
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: throw Exception("Empty stream response")
         
-        val json = json.parseToJsonElement(body).jsonObject
-        return json["url"]?.jsonPrimitive?.contentOrNull ?: throw Exception("No stream URL")
-    }
-    
-    suspend fun downloadTrack(track: SCTrack): ByteArray? {
-        if (track.downloadUrl.isNullOrBlank()) return null
-        
-        val url = "${track.downloadUrl}?client_id=$CLIENT_ID"
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0")
-            .build()
-        
-        val response = client.newCall(request).execute()
-        return response.body?.bytes()
+        val jsonResponse = json.parseToJsonElement(body).jsonObject
+        return jsonResponse["url"]?.jsonPrimitive?.contentOrNull ?: throw Exception("No stream URL")
     }
 }
