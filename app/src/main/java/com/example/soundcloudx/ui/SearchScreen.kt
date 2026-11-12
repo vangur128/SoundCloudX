@@ -1,10 +1,15 @@
 package com.example.soundcloudx.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -13,10 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.soundcloudx.PlayerViewModel
 import com.example.soundcloudx.sc.SoundCloudApi
@@ -25,7 +34,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(playerViewModel: PlayerViewModel) {
+fun SearchScreen(playerViewModel: PlayerViewModel, onTrackClick: (SCTrack) -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SCTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -33,124 +42,202 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
-        Column(Modifier.weight(1f).padding(16.dp)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Поиск треков", color = Color.Gray) },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF1DB954),
-                    unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = Color(0xFF1DB954)
-                ),
-                modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF0A0A0A), Color(0xFF1A1A1A))
+                )
             )
-            Spacer(Modifier.height(12.dp))
-            
-            Button(
-                onClick = {
-                    if (query.isBlank()) return@Button
-                    isLoading = true
-                    errorMessage = null
-                    scope.launch {
-                        try {
-                            results = SoundCloudApi.search(query)
-                        } catch (e: Exception) {
-                            errorMessage = e.message ?: "Ошибка сети"
-                        } finally {
-                            isLoading = false
-                        }
-                    }
-                },
-                enabled = !isLoading && query.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) { 
-                Text(if (isLoading) "Ищем..." else "Найти", color = Color.Black, style = MaterialTheme.typography.titleMedium) 
-            }
+    ) {
+        // Header
+        Text(
+            text = "SoundCloudX",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1DB954),
+            modifier = Modifier.padding(24.dp, 24.dp, 24.dp, 8.dp)
+        )
+        
+        Text(
+            text = "Найди свою музыку",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(24.dp, 0.dp, 24.dp, 16.dp)
+        )
 
-            if (errorMessage != null) {
-                Text(errorMessage!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
-            }
-            
-            Spacer(Modifier.height(16.dp))
-            
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                items(results) { track ->
-                    TrackRow(track, playerViewModel, context)
+        // Search field
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Введите название трека или артиста", color = Color.Gray) },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF1DB954) }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFF1DB954),
+                unfocusedBorderColor = Color(0xFF333333),
+                focusedLabelColor = Color(0xFF1DB954),
+                cursorColor = Color(0xFF1DB954)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .clip(RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp)
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        // Search button
+        Button(
+            onClick = {
+                if (query.isBlank()) return@Button
+                isLoading = true
+                errorMessage = null
+                scope.launch {
+                    try {
+                        results = SoundCloudApi.search(query, limit = 50)
+                    } catch (e: Exception) {
+                        errorMessage = e.message ?: "Ошибка сети"
+                    } finally {
+                        isLoading = false
+                    }
                 }
-            }
+            },
+            enabled = !isLoading && query.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF1DB954),
+                contentColor = Color.Black
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .height(52.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text(
+                if (isLoading) "Поиск..." else "Найти треки",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
 
-        playerViewModel.currentTrack?.let { track ->
-            NowPlayingBar(track, playerViewModel)
+        if (errorMessage != null) {
+            Text(
+                errorMessage!!,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(24.dp, 16.dp)
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Results
+        if (results.isNotEmpty()) {
+            Text(
+                text = "Найдено: ${results.size} треков",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+            )
+        }
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        ) {
+            items(results) { track ->
+                TrackRow(track, playerViewModel, context, onTrackClick)
+            }
+            item { Spacer(Modifier.height(100.dp)) }
         }
     }
 }
 
 @Composable
-fun TrackRow(track: SCTrack, playerViewModel: PlayerViewModel, context: android.content.Context) {
+fun TrackRow(
+    track: SCTrack,
+    playerViewModel: PlayerViewModel,
+    context: android.content.Context,
+    onTrackClick: (SCTrack) -> Unit
+) {
     val isCurrentlyPlaying = playerViewModel.currentTrack?.id == track.id && playerViewModel.isPlaying
-    
+
     Row(
-        Modifier.fillMaxWidth().clickable { 
-            playerViewModel.playTrack(track, context) 
-        }.background(Color(0xFF1E1E1E), shape = MaterialTheme.shapes.medium).padding(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTrackClick(track) }
+            .background(
+                Color(0xFF1E1E1E),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         AsyncImage(
-            model = track.artworkUrl, 
-            contentDescription = null, 
-            modifier = Modifier.size(56.dp).background(Color.DarkGray, shape = MaterialTheme.shapes.small)
+            model = track.artworkUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.DarkGray)
         )
-        Column(Modifier.weight(1f)) {
-            Text(track.title, color = Color.White, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(track.user.username, color = Color.Gray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                track.title,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                track.user.username,
+                color = Color.Gray,
+                fontSize = 13.sp,
+                maxLines = 1
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${formatDuration(track.duration)} • ${track.playCount} прослушиваний",
+                color = Color(0xFF666666),
+                fontSize = 11.sp
+            )
         }
-        IconButton(onClick = { 
-            if (isCurrentlyPlaying) {
-                playerViewModel.togglePlayPause()
-            } else {
-                playerViewModel.playTrack(track, context)
-            }
-        }) {
+
+        IconButton(
+            onClick = {
+                if (isCurrentlyPlaying) {
+                    playerViewModel.togglePlayPause()
+                } else {
+                    playerViewModel.playTrack(track, context)
+                }
+            },
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1DB954))
+        ) {
             Icon(
                 imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = "Play",
-                tint = Color(0xFF1DB954),
-                modifier = Modifier.size(32.dp)
+                tint = Color.Black,
+                modifier = Modifier.size(28.dp)
             )
         }
     }
 }
 
-@Composable
-fun NowPlayingBar(track: SCTrack, playerViewModel: PlayerViewModel) {
-    Row(
-        Modifier.fillMaxWidth().background(Color(0xFF282828)).padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        AsyncImage(
-            model = track.artworkUrl, 
-            contentDescription = null, 
-            modifier = Modifier.size(48.dp).background(Color.DarkGray, shape = MaterialTheme.shapes.small)
-        )
-        Column(Modifier.weight(1f)) {
-            Text("Сейчас играет", color = Color(0xFF1DB954), style = MaterialTheme.typography.labelSmall)
-            Text(track.title, color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        IconButton(onClick = { playerViewModel.togglePlayPause() }) {
-            Icon(
-                imageVector = if (playerViewModel.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = "Toggle Play",
-                tint = Color.White,
-                modifier = Modifier.size(36.dp)
-            )
-        }
-    }
+fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    val minutes = seconds / 60
+    val secs = seconds % 60
+    return String.format("%d:%02d", minutes, secs)
 }
