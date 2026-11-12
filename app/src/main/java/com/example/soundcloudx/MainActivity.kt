@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 // --- VIEW MODEL ---
 class PlayerViewModel : ViewModel() {
     var exoPlayer: ExoPlayer? = null
+    var mediaSession: androidx.media3.session.MediaSession? = null
     var currentTrack by mutableStateOf<SCTrack?>(null)
     var isPlaying by mutableStateOf(false)
     var currentPosition by mutableStateOf(0L)
@@ -67,6 +68,10 @@ class PlayerViewModel : ViewModel() {
             exoPlayer = ExoPlayer.Builder(context)
                 .setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
                 .build()
+            
+            // Создаем MediaSession для интеграции с системой
+            mediaSession = androidx.media3.session.MediaSession.Builder(context, exoPlayer!!).build()
+            
             exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
                 override fun onPlaybackStateChanged(state: Int) {
@@ -113,7 +118,7 @@ class PlayerViewModel : ViewModel() {
     fun toggleShuffle() { isShuffle = !isShuffle }
     fun toggleRepeat() { isRepeat = !isRepeat }
 
-    override fun onCleared() { super.onCleared(); exoPlayer?.release(); exoPlayer = null }
+    override fun onCleared() { super.onCleared(); mediaSession?.release(); exoPlayer?.release(); exoPlayer = null }
 }
 
 // --- MAIN ACTIVITY ---
