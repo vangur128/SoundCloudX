@@ -63,10 +63,14 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
                 scope.launch {
                     try {
                         val found = SoundCloudApi.search(query, limit = 30)
-                        if (found.isEmpty()) errorMessage = "Ничего не найдено."
+                        if (found.isEmpty()) {
+                            errorMessage = "Ничего не найдено. Попробуй другой запрос."
+                        }
                         results = found
                     } catch (e: Exception) {
-                        errorMessage = "Ошибка: ${e.message}"
+                        val errorMsg = e.message ?: "Неизвестная ошибка"
+                        errorMessage = "Ошибка: $errorMsg"
+                        results = emptyList()
                     } finally {
                         isLoading = false
                     }
@@ -82,12 +86,12 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context) {
 
         Spacer(Modifier.height(16.dp))
 
-        errorMessage?.let {
+        errorMessage?.let { error ->
             Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF331133))) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Error, null, tint = Color(0xFFFF6B9B))
                     Spacer(Modifier.width(8.dp))
-                    Text(it, color = Color(0xFFFF6B9B), modifier = Modifier.weight(1f))
+                    Text(error, color = Color(0xFFFF6B9B), modifier = Modifier.weight(1f))
                 }
             }
             Spacer(Modifier.height(16.dp))
