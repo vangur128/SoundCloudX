@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -42,7 +43,6 @@ import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// --- VIEW MODEL (Всё в одном файле!) ---
 class PlayerViewModel : ViewModel() {
     var exoPlayer: ExoPlayer? = null
     var currentTrack by mutableStateOf<SCTrack?>(null)
@@ -87,32 +87,27 @@ class PlayerViewModel : ViewModel() {
 
     fun togglePlayPause() { if (isPlaying) { exoPlayer?.pause(); isPlaying = false } else { exoPlayer?.play(); isPlaying = true } }
     fun seekTo(position: Long) { exoPlayer?.seekTo(position); currentPosition = position }
-    
     fun nextTrack(context: Context) {
         if (queue.isEmpty()) return
         queueIndex = if (isShuffle) (0 until queue.size).random() else (queueIndex + 1) % queue.size
         playTrack(queue[queueIndex], context, queue)
     }
-
     fun previousTrack(context: Context) {
         if (queue.isEmpty()) return
         if (currentPosition > 3000) { seekTo(0); return }
         queueIndex = if (queueIndex - 1 < 0) queue.size - 1 else queueIndex - 1
         playTrack(queue[queueIndex], context, queue)
     }
-
     fun updatePosition() {
         currentPosition = exoPlayer?.currentPosition ?: 0L
         duration = exoPlayer?.duration?.takeIf { it > 0 } ?: 0L
     }
-
     fun toggleShuffle() { isShuffle = !isShuffle }
     fun toggleRepeat() { isRepeat = !isRepeat }
 
     override fun onCleared() { super.onCleared(); exoPlayer?.release(); exoPlayer = null }
 }
 
-// --- MAIN ACTIVITY ---
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
@@ -132,7 +127,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- SEARCH SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClick: () -> Unit) {
@@ -148,13 +142,11 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
 
     Column(Modifier.fillMaxSize().background(Color(0xFF1A1025)).padding(16.dp)) {
         Text("Melo", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC9A8E8), modifier = Modifier.padding(bottom = 16.dp))
-        
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF2A1F35), contentColor = Color(0xFFC9A8E8)) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("SoundCloud", fontSize = 14.sp) })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Моя музыка (${localTracks.size})", fontSize = 14.sp) })
         }
         Spacer(Modifier.height(16.dp))
-
         if (selectedTab == 0) {
             OutlinedTextField(value = query, onValueChange = { query = it }, placeholder = { Text("Введите запрос...", color = Color.Gray) }, singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF9B7CB6)) },
@@ -179,7 +171,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
             }
         }
         Spacer(Modifier.height(16.dp))
-
         errorMessage?.let { error ->
             Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF331133))) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -190,10 +181,8 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
             }
             Spacer(Modifier.height(16.dp))
         }
-
         val displayTracks = if (selectedTab == 0) results else localTracks
         if (displayTracks.isEmpty() && selectedTab == 1) Text("Локальная музыка не найдена", color = Color.Gray, modifier = Modifier.padding(16.dp))
-
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(displayTracks) { track ->
                 Row(modifier = Modifier.fillMaxWidth().clickable { playerViewModel.playTrack(track, context, displayTracks); onTrackClick() }
@@ -211,7 +200,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
-
     playerViewModel.currentTrack?.let { track ->
         Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF2A1F35)).clickable { onTrackClick() }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (track.artworkUrl.isNotBlank()) AsyncImage(model = track.artworkUrl, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3D2E4A)))
@@ -228,14 +216,12 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     }
 }
 
-// --- PLAYER SCREEN ---
 @Composable
 fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackClick: () -> Unit) {
     val track = playerViewModel.currentTrack ?: return
     val isPlaying = playerViewModel.isPlaying
     LaunchedEffect(isPlaying) { while (isPlaying) { playerViewModel.updatePosition(); delay(1000) } }
     val rotation by animateFloatAsState(targetValue = if (isPlaying) 360f else 0f, animationSpec = infiniteRepeatable(animation = tween(20000)))
-
     Column(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A1025), Color(0xFF0D0815)))).padding(24.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, "Back", tint = Color(0xFFC9A8E8)) }
@@ -243,54 +229,6 @@ fun PlayerScreenView(playerViewModel: PlayerViewModel, context: Context, onBackC
             IconButton(onClick = { }) { Icon(Icons.Default.Share, "Share", tint = Color(0xFFC9A8E8)) }
         }
         Spacer(Modifier.height(32.dp))
-        AsyncImage(model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(40.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(track.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(4.dp))
-                Text(track.user.username, color = Color(0xFF9B7CB6), fontSize = 16.sp, maxLines = 1)
-            }
-            IconButton(onClick = { }) { Icon(Icons.Default.FavoriteBorder, "Like", tint = Color(0xFFC9A8E8), modifier = Modifier.size(32.dp)) }
-        }
-        Spacer(Modifier.height(32.dp))
-        Slider(value = playerViewModel.currentPosition.toFloat(), onValueChange = { playerViewModel.seekTo(it.toLong()) },
-            valueRange = 0f..playerViewModel.duration.toFloat().coerceAtLeast(1f),
-            colors = SliderDefaults.colors(thumbColor = Color(0xFFC9A8E8), activeTrackColor = Color(0xFFC9A8E8), inactiveTrackColor = Color(0xFF3D2E4A)),
-            modifier = Modifier.fillMaxWidth())
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatDuration(playerViewModel.currentPosition), color = Color(0xFF9B7CB6), fontSize = 12.sp)
-            Text(formatDuration(playerViewModel.duration), color = Color(0xFF9B7CB6), fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(24.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { playerViewModel.toggleShuffle() }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Shuffle, "Shuffle", tint = if (playerViewModel.isShuffle) Color(0xFFC9A8E8) else Color(0xFF6B5B7B), modifier = Modifier.size(28.dp))
-            }
-            IconButton(onClick = { playerViewModel.previousTrack(context) }, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(40.dp))
-            }
-            IconButton(onClick = { playerViewModel.togglePlayPause() }, modifier = Modifier.size(72.dp).clip(CircleShape).background(Color(0xFF9B7CB6))) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause", tint = Color.White, modifier = Modifier.size(48.dp))
-            }
-            IconButton(onClick = { playerViewModel.nextTrack(context) }, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(40.dp))
-            }
-            IconButton(onClick = { playerViewModel.toggleRepeat() }, modifier = Modifier.size(48.dp)) {
-                Icon(if (playerViewModel.isRepeat) Icons.Default.RepeatOne else Icons.Default.Repeat, "Repeat", tint = if (playerViewModel.isRepeat) Color(0xFFC9A8E8) else Color(0xFF6B5B7B), modifier = Modifier.size(28.dp))
-            }
-        }
-    }
-}
-
-fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val seconds = ms / 1000
-    val minutes = seconds / 60
-    val secs = seconds % 60
-    return String.format("%d:%02d", minutes, secs)
-}32.dp))
         AsyncImage(model = track.artworkUrl, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(320.dp).clip(RoundedCornerShape(24.dp)).rotate(rotation).background(Color(0xFF3D2E4A)).align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(40.dp))
