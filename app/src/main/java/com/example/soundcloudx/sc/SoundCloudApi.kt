@@ -23,54 +23,60 @@ object SoundCloudApi {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val url = "https://api.deezer.com/search?q=$encodedQuery&limit=$limit"
         
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("Accept", "application/json")
-            .header("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
-            .build()
-        
-        val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
-        
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code}: ${responseBody.take(200)}")
-        }
-        
-        if (responseBody.isBlank()) {
-            throw Exception("Пустой ответ от сервера")
-        }
-        
-        val root = json.parseToJsonElement(responseBody).jsonObject
-        val data = root["data"]?.jsonArray ?: return emptyList()
-        
-        return data.map { element ->
-            val track = element.jsonObject
-            val artist = track["artist"]?.jsonObject
-            val album = track["album"]?.jsonObject
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Accept", "application/json")
+                .build()
             
-            SCTrack(
-                id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
-                title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
-                user = SCUser(
-                    id = artist?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
-                    username = artist?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown",
-                    avatarUrl = ""
-                ),
-                artworkUrl = album?.get("cover_big")?.jsonPrimitive?.contentOrNull 
-                    ?: album?.get("cover_medium")?.jsonPrimitive?.contentOrNull 
-                    ?: album?.get("cover")?.jsonPrimitive?.contentOrNull 
-                    ?: "",
-                duration = (track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0) * 1000,
-                streamUrl = track["preview"]?.jsonPrimitive?.contentOrNull ?: "",
-                playCount = 0,
-                likesCount = 0
-            )
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Сервер не ответил (пустое тело)")
+            
+            if (!response.isSuccessful) {
+                val errorCode = response.code
+                val errorBody = responseBody.take(100)
+                throw Exception("HTTP $errorCode: $errorBody")
+            }
+            
+            if (responseBody.isBlank()) {
+                throw Exception("Пустой ответ от API")
+            }
+            
+            val root = json.parseToJsonElement(responseBody).jsonObject
+            val data = root["data"]?.jsonArray ?: return emptyList()
+            
+            return data.map { element ->
+                val track = element.jsonObject
+                val artist = track["artist"]?.jsonObject
+                val album = track["album"]?.jsonObject
+                
+                SCTrack(
+                    id = track["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                    title = track["title"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    user = SCUser(
+                        id = artist?.get("id")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0,
+                        username = artist?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                        avatarUrl = ""
+                    ),
+                    artworkUrl = album?.get("cover_big")?.jsonPrimitive?.contentOrNull 
+                        ?: album?.get("cover_medium")?.jsonPrimitive?.contentOrNull 
+                        ?: album?.get("cover")?.jsonPrimitive?.contentOrNull 
+                        ?: "",
+                    duration = (track["duration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0) * 1000,
+                    streamUrl = track["preview"]?.jsonPrimitive?.contentOrNull ?: "",
+                    playCount = 0,
+                    likesCount = 0
+                )
+            }
+        } catch (e: Exception) {
+            val errorMsg = e.message ?: "Неизвестная ошибка"
+            throw Exception(errorMsg)
         }
     }
     
     suspend fun getStreamUrl(track: SCTrack): String {
-        if (track.streamUrl.isBlank()) throw Exception("Превью недоступно для этого трека")
+        if (track.streamUrl.isBlank()) throw Exception("Превью недоступно")
         return track.streamUrl
     }
 }
