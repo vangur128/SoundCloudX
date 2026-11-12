@@ -16,8 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.soundcloudx.ui.PlayerScreen
-import com.example.soundcloudx.ui.SearchScreen
+import com.example.soundcloudx.ui.*
 
 class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
@@ -47,7 +46,7 @@ class MainActivity : ComponentActivity() {
                                     label = { Text("Плеер") },
                                     selected = currentRoute == "player",
                                     onClick = { navController.navigate("player") }
-                                )
+                                }
                             }
                         }
                     }
@@ -55,23 +54,23 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = "search",
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding).fillMaxSize()
                     ) {
                         composable("search") {
                             SearchScreen(
                                 playerViewModel = playerViewModel,
-                                onTrackClick = { track ->
-                                    navController.navigate("player")
-                                }
+                                onTrackClick = { track -> navController.navigate("player") }
                             )
                         }
                         composable("player") {
-                            PlayerScreen(playerViewModel = playerViewModel)
+                            PlayerScreen(
+                                playerViewModel = playerViewModel,
+                                onBackClick = { navController.popBackStack() }
+                            )
                         }
                     }
                 }
 
-                // Показываем NowPlayingBar поверх всего
                 playerViewModel.currentTrack?.let { track ->
                     if (currentRoute != "player") {
                         NowPlayingBar(
@@ -84,4 +83,4 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-}
+                    }
