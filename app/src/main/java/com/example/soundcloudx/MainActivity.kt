@@ -43,6 +43,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.example.soundcloudx.db.*
 import com.example.soundcloudx.sc.LocalMusicApi
+import com.example.soundcloudx.sc.SCUser // <-- ДОБАВИЛИ ЭТОТ ИМПОРТ
 import com.example.soundcloudx.sc.SoundCloudApi
 import com.example.soundcloudx.sc.SCTrack
 import kotlinx.coroutines.delay
@@ -181,7 +182,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel, context: Context, onTrackClic
     
     val db = remember { MeloDatabase.getDatabase(context) }
     
-    // Прямые запросы к БД (работают мгновенно и реактивно)
     val recentTracks by db.trackDao().getRecentTracks().collectAsState(initial = emptyList())
     val favoriteTracks by db.trackDao().getFavoriteTracks().collectAsState(initial = emptyList())
     val playlists by db.playlistDao().getAllPlaylists().collectAsState(initial = emptyList())
