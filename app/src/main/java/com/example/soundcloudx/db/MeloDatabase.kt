@@ -40,7 +40,6 @@ data class HistoryEntity(
     val playedAt: Long = System.currentTimeMillis()
 )
 
-// ЧЕРНЫЙ СПИСОК
 @Entity(tableName = "hidden_tracks")
 data class HiddenTrackEntity(
     @PrimaryKey val trackId: Long,
@@ -51,13 +50,10 @@ data class HiddenTrackEntity(
 interface TrackDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrack(track: TrackEntity)
-    
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getTrackById(id: Long): TrackEntity?
-
     @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM history ORDER BY playedAt DESC LIMIT 100)")
     fun getRecentTracks(): Flow<List<TrackEntity>>
-
     @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM favorites ORDER BY addedAt DESC LIMIT 100)")
     fun getFavoriteTracks(): Flow<List<TrackEntity>>
 }
@@ -66,19 +62,14 @@ interface TrackDao {
 interface PlaylistDao {
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     fun getAllPlaylists(): Flow<List<PlaylistEntity>>
-    
     @Insert
     suspend fun insertPlaylist(playlist: PlaylistEntity): Long
-    
     @Delete
     suspend fun deletePlaylist(playlist: PlaylistEntity)
-    
     @Query("SELECT * FROM tracks INNER JOIN playlist_tracks ON tracks.id = playlist_tracks.trackId WHERE playlist_tracks.playlistId = :playlistId")
     fun getTracksInPlaylist(playlistId: Int): Flow<List<TrackEntity>>
-    
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addTrackToPlaylist(playlistTrack: PlaylistTrackEntity)
-    
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND trackId = :trackId")
     suspend fun removeTrackFromPlaylist(playlistId: Int, trackId: Long)
 }
@@ -87,13 +78,10 @@ interface PlaylistDao {
 interface FavoriteDao {
     @Query("SELECT * FROM favorites ORDER BY addedAt DESC")
     fun getAllFavorites(): Flow<List<FavoriteEntity>>
-    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
-    
     @Query("DELETE FROM favorites WHERE trackId = :trackId")
     suspend fun removeFavorite(trackId: Long)
-    
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE trackId = :trackId)")
     suspend fun isFavorite(trackId: Long): Boolean
 }
@@ -102,10 +90,8 @@ interface FavoriteDao {
 interface HistoryDao {
     @Query("SELECT * FROM history ORDER BY playedAt DESC LIMIT 100")
     fun getRecentHistory(): Flow<List<HistoryEntity>>
-    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addToHistory(history: HistoryEntity)
-    
     @Query("DELETE FROM history")
     suspend fun clearHistory()
 }
@@ -114,13 +100,10 @@ interface HistoryDao {
 interface HiddenTrackDao {
     @Query("SELECT * FROM hidden_tracks ORDER BY hiddenAt DESC")
     fun getAllHidden(): Flow<List<HiddenTrackEntity>>
-    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun hideTrack(hidden: HiddenTrackEntity)
-    
     @Query("DELETE FROM hidden_tracks WHERE trackId = :trackId")
     suspend fun unhideTrack(trackId: Long)
-    
     @Query("SELECT trackId FROM hidden_tracks")
     suspend fun getHiddenIds(): List<Long>
 }
