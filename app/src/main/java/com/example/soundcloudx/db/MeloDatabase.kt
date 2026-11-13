@@ -36,8 +36,15 @@ data class FavoriteEntity(
 
 @Entity(tableName = "history")
 data class HistoryEntity(
-    @PrimaryKey val trackId: Long, // Теперь ID трека = ID записи, чтобы не было дублей
+    @PrimaryKey val trackId: Long,
     val playedAt: Long = System.currentTimeMillis()
+)
+
+// ЧЕРНЫЙ СПИСОК
+@Entity(tableName = "hidden_tracks")
+data class HiddenTrackEntity(
+    @PrimaryKey val trackId: Long,
+    val hiddenAt: Long = System.currentTimeMillis()
 )
 
 @Dao
@@ -48,11 +55,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getTrackById(id: Long): TrackEntity?
 
-    // Умный запрос: сам достает треки из истории по порядку
     @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM history ORDER BY playedAt DESC LIMIT 100)")
     fun getRecentTracks(): Flow<List<TrackEntity>>
 
-    // Умный запрос: сам достает треки из избранного
     @Query("SELECT * FROM tracks WHERE id IN (SELECT trackId FROM favorites ORDER BY addedAt DESC LIMIT 100)")
     fun getFavoriteTracks(): Flow<List<TrackEntity>>
 }
@@ -105,15 +110,31 @@ interface HistoryDao {
     suspend fun clearHistory()
 }
 
+@Dao
+interface HiddenTrackDao {
+    @Query("SELECT * FROM hidden_tracks ORDER BY hiddenAt DESC")
+    fun getAllHidden(): Flow<List<HiddenTrackEntity>>
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideTrack(hidden: HiddenTrackEntity)
+    
+    @Query("DELETE FROM hidden_tracks WHERE trackId = :trackId")
+    suspend fun unhideTrack(trackId: Long)
+    
+    @Query("SELECT trackId FROM hidden_tracks")
+    suspend fun getHiddenIds(): List<Long>
+}
+
 @Database(
-    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, FavoriteEntity::class, HistoryEntity::class],
-    version = 2 // Обновили версию, чтобы применились новые таблицы
+    entities = [TrackEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, FavoriteEntity::class, HistoryEntity::class, HiddenTrackEntity::class],
+    version = 3
 )
 abstract class MeloDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
+    abstract fun hiddenTrackDao(): HiddenTrackDao
     
     companion object {
         @Volatile
@@ -125,8 +146,7 @@ abstract class MeloDatabase : RoomDatabase() {
                     context.applicationContext,
                     MeloDatabase::class.java,
                     "melo_database"
-                ).fallbackToDestructiveMigration() // Сбросит старую базу, если были ошибки
-                .build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }
