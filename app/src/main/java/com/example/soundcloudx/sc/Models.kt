@@ -11,6 +11,7 @@ data class SCTrack(
     val duration: Long,
     val streamUrl: String,
     val downloadUrl: String? = null,
+    val isDownloadable: Boolean = false,
     val playCount: Long = 0,
     val likesCount: Long = 0,
     val isLocal: Boolean = false
